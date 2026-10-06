@@ -15,8 +15,10 @@ from cma.research.live_study import (
     Quote,
     StudyConfig,
     analyze,
+    clustered_stats,
     detect_moves,
     executable_edge_c,
+    live_decision,
     render_markdown,
     stale_lifetime_ms,
 )
@@ -111,4 +113,50 @@ def test_analyze_finds_a_stale_quote_after_a_reference_jump() -> None:
     assert anchored["0"]["mean_c"] == pytest.approx(50.0 + 8.2 - 51.0 - 1.8, abs=0.1)
     assert anchored["1000"]["mean_c"] < 0
     assert result["baseline_anchored"]["mean_c"] < 0  # no news: pay half-spread + fee
-    assert "Market-anchored executable edge" in render_markdown(result)
+    (pooled,) = (r for r in result["pooled"] if r["threshold_bps"] == 10.0)
+    assert pooled["series"] == "all" and pooled["anchored_edge_by_latency"]["0"]["moves"] == 1
+    # one move: positive at 100 ms, far too little data to reject or promote
+    assert result["decision"]["decision"] == "COLLECT_MORE_DATA"
+    text = render_markdown(result)
+    assert "Market-anchored executable edge" in text and "Decision: `COLLECT_MORE_DATA`" in text
+
+
+def test_clustered_stats_treats_each_move_as_one_cluster() -> None:
+    st = clustered_stats([(1.0, 1), (3.0, 1), (2.0, 2), (6.0, 2)])
+    # mean 3; cluster residual sums -2 and +2 -> sqrt(2/1 * 8) / 4 = 1
+    assert st["mean_c"] == pytest.approx(3.0) and st["se_c"] == pytest.approx(1.0)
+    assert (st["n"], st["moves"], st["share_positive"]) == (4, 2, 1.0)
+    assert clustered_stats([(1.0, 1), (2.0, 1)])["se_c"] is None  # one move: undefined
+    assert clustered_stats([])["n"] == 0
+
+
+def _pooled(cells: dict[float, tuple[float, float, int]]) -> dict[str, object]:
+    """threshold -> (mean, se, moves), same numbers at 100 and 250 ms."""
+    rows = []
+    for thr, (mean, se, moves) in cells.items():
+        st = {"n": 4 * moves, "moves": moves, "mean_c": mean, "se_c": se, "share_positive": 0.1}
+        rows.append({"threshold_bps": thr, "anchored_edge_by_latency": {"100": st, "250": st}})
+    return {"pooled": rows}
+
+
+@pytest.mark.parametrize(
+    ("cells", "expected", "why"),
+    [
+        ({3.0: (-1.5, 0.2, 90), 5.0: (-2.0, 0.3, 40), 10.0: (-1.0, 0.9, 8)}, "REJECT", "beyond"),
+        ({5.0: (-2.0, 0.3, 40), 10.0: (0.4, 0.9, 8)}, "COLLECT_MORE_DATA", "positive"),
+        ({5.0: (-2.0, 0.3, 12)}, "COLLECT_MORE_DATA", "only 12 moves"),
+        ({5.0: (-0.2, 0.3, 40)}, "COLLECT_MORE_DATA", "within 2 SE"),
+        ({3.0: (-1.0, 0.2, 40)}, "COLLECT_MORE_DATA", "no 5 bps samples"),
+    ],
+)
+def test_live_decision_rule(
+    cells: dict[float, tuple[float, float, int]], expected: str, why: str
+) -> None:
+    dec = live_decision(_pooled(cells))
+    assert dec["decision"] == expected and why in dec["reasons"][0]
+    assert "One live window never promotes" in dec["rule"]
+
+
+def test_live_decision_without_reference_data() -> None:
+    dec = live_decision({"error": "no reference (Coinbase BTC-USD) data"})
+    assert dec["decision"] == "COLLECT_MORE_DATA" and "no reference" in dec["reasons"][0]

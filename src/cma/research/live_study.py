@@ -486,50 +486,145 @@ def _baseline_stats(values: Sequence[float]) -> dict[str, Any]:
     }
 
 
-def summarize_samples(samples: Sequence[Sample], cfg: StudyConfig) -> list[dict[str, Any]]:
-    """One row per (threshold, series): lifetimes and executable edge by latency."""
-    rows: list[dict[str, Any]] = []
-    keys = sorted({(s.threshold_bps, s.series) for s in samples})
-    for thr, series in keys:
-        grp = [s for s in samples if s.threshold_bps == thr and s.series == series]
-        lives = [s.lifetime_ms for s in grp if s.lifetime_ms is not None]
-        censored = sum(1 for s in grp if s.lifetime_ms is None)
+def clustered_stats(pairs: Sequence[tuple[float, int]]) -> dict[str, Any]:
+    """Mean, share > 0 and move-clustered standard error of ``(value, move id)`` pairs.
 
-        def by_latency(
-            group: Sequence[Sample], get: Callable[[Sample, int], float | None]
-        ) -> dict[str, Any]:
-            table: dict[str, Any] = {}
-            for lat in cfg.latencies_ms:
-                edges = [e for s in group if (e := get(s, lat)) is not None]
-                pos = [e for e in edges if e > 0]
-                table[str(lat)] = {
-                    "n": len(edges),
-                    "share_positive": (len(pos) / len(edges)) if edges else None,
-                    "mean_c": float(np.mean(edges)) if edges else None,
-                    "mean_positive_c": float(np.mean(pos)) if pos else None,
-                }
-            return table
+    Every in-play strike reacts to the same BTC move, so samples are not independent. The
+    standard error is the cluster-robust (CR1) one with each move as a cluster; with one
+    move it is undefined (None).
+    """
+    if not pairs:
+        return {
+            "n": 0,
+            "moves": 0,
+            "share_positive": None,
+            "mean_c": None,
+            "se_c": None,
+            "mean_positive_c": None,
+        }
+    vals = np.asarray([v for v, _ in pairs], dtype=float)
+    mean = float(vals.mean())
+    resid: dict[int, float] = {}
+    for v, move in pairs:
+        resid[move] = resid.get(move, 0.0) + (v - mean)
+    g = len(resid)
+    se = math.sqrt(g / (g - 1) * sum(r * r for r in resid.values())) / vals.size if g > 1 else None
+    pos = vals[vals > 0]
+    return {
+        "n": int(vals.size),
+        "moves": g,
+        "share_positive": float(pos.size / vals.size),
+        "mean_c": mean,
+        "se_c": se,
+        "mean_positive_c": float(pos.mean()) if pos.size else None,
+    }
 
-        by_lat = by_latency(grp, lambda s, lat: s.edge_c.get(lat))
-        anchored_by_lat = by_latency(grp, lambda s, lat: s.anchored_edge_c.get(lat))
-        rows.append(
-            {
-                "threshold_bps": thr,
-                "series": series,
-                "samples": len(grp),
-                "moves": len({s.t0_ns for s in grp}),
-                "lifetime_ms": {
-                    "p25": _pct(lives, 25),
-                    "median": _pct(lives, 50),
-                    "p75": _pct(lives, 75),
-                    "p90": _pct(lives, 90),
-                    "share_beyond_horizon": censored / len(grp) if grp else None,
-                },
-                "edge_by_latency": by_lat,
-                "anchored_edge_by_latency": anchored_by_lat,
-            }
-        )
-    return rows
+
+def _summary_row(
+    thr: float, series: str, grp: Sequence[Sample], cfg: StudyConfig
+) -> dict[str, Any]:
+    lives = [s.lifetime_ms for s in grp if s.lifetime_ms is not None]
+    censored = sum(1 for s in grp if s.lifetime_ms is None)
+
+    def by_latency(get: Callable[[Sample, int], float | None]) -> dict[str, Any]:
+        return {
+            str(lat): clustered_stats([(e, s.t0_ns) for s in grp if (e := get(s, lat)) is not None])
+            for lat in cfg.latencies_ms
+        }
+
+    return {
+        "threshold_bps": thr,
+        "series": series,
+        "samples": len(grp),
+        "moves": len({s.t0_ns for s in grp}),
+        "lifetime_ms": {
+            "p25": _pct(lives, 25),
+            "median": _pct(lives, 50),
+            "p75": _pct(lives, 75),
+            "p90": _pct(lives, 90),
+            "share_beyond_horizon": censored / len(grp) if grp else None,
+        },
+        "edge_by_latency": by_latency(lambda s, lat: s.edge_c.get(lat)),
+        "anchored_edge_by_latency": by_latency(lambda s, lat: s.anchored_edge_c.get(lat)),
+    }
+
+
+def summarize_samples(
+    samples: Sequence[Sample], cfg: StudyConfig, *, pooled: bool = False
+) -> list[dict[str, Any]]:
+    """One row per (threshold, series): lifetimes and executable edge by latency.
+
+    ``pooled`` gives one row per threshold over every series (series ``"all"``).
+    """
+    groups: dict[tuple[float, str], list[Sample]] = {}
+    for s in samples:
+        groups.setdefault((s.threshold_bps, "all" if pooled else s.series), []).append(s)
+    return [_summary_row(thr, series, groups[thr, series], cfg) for thr, series in sorted(groups)]
+
+
+# ----------------------------------------------------------------------------- decision
+
+PRIMARY_THRESHOLD_BPS = 5.0
+DECISION_LATENCIES_MS = (100, 250)  # what a well-placed server can buy; 0 ms is a diagnostic
+MIN_DECISION_MOVES = 30
+
+
+def live_decision(result: Mapping[str, Any]) -> dict[str, Any]:
+    """Pre-registered real-market call from one live window (rule fixed before the first run).
+
+    * ``REJECT`` (the stale-quote taker on these books): no threshold has a positive pooled
+      market-anchored mean edge at 100 or 250 ms, and at the primary 5 bps threshold the
+      100 ms edge is negative by more than two move-clustered standard errors, on at least
+      30 moves.
+    * ``COLLECT_MORE_DATA``: anything else (too few moves, an inconclusive interval or a
+      positive cell). A positive cell from one short window is a hypothesis to test on the
+      >= 14-day collection with the out-of-sample and promotion gates, never a promotion.
+
+    ``FORWARD_PAPER_CANDIDATE`` is never issued from a single live window.
+    """
+    rule = (
+        "REJECT when no move threshold shows a positive pooled market-anchored edge at "
+        f"{' or '.join(f'{x} ms' for x in DECISION_LATENCIES_MS)} and the "
+        f"{PRIMARY_THRESHOLD_BPS:g} bps edge at {DECISION_LATENCIES_MS[0]} ms is negative by "
+        f"more than 2 move-clustered SE on >= {MIN_DECISION_MOVES} moves; otherwise "
+        "COLLECT_MORE_DATA. One live window never promotes to paper."
+    )
+    if "error" in result:
+        return {"decision": "COLLECT_MORE_DATA", "reasons": [str(result["error"])], "rule": rule}
+    cells: list[str] = []
+    positive: list[str] = []
+    primary: Mapping[str, Any] | None = None
+    for row in result.get("pooled", []):
+        thr = float(row["threshold_bps"])
+        for lat in DECISION_LATENCIES_MS:
+            st = row["anchored_edge_by_latency"].get(str(lat), {})
+            mean, se = st.get("mean_c"), st.get("se_c")
+            if mean is None:
+                continue
+            label = f"{thr:g} bps at {lat} ms"
+            band = f" ± {2 * se:.2f}" if se is not None else ""
+            cells.append(
+                f"{label}: {mean:+.2f}¢{band} (2 SE), {st['n']} samples on {st['moves']} moves"
+            )
+            if mean > 0:
+                positive.append(label)
+            if thr == PRIMARY_THRESHOLD_BPS and lat == DECISION_LATENCIES_MS[0]:
+                primary = st
+    if primary is None or not primary.get("n"):
+        reasons = [f"no {PRIMARY_THRESHOLD_BPS:g} bps samples at {DECISION_LATENCIES_MS[0]} ms"]
+        return {"decision": "COLLECT_MORE_DATA", "reasons": reasons + cells, "rule": rule}
+    if positive:
+        reasons = [f"positive mean edge: {', '.join(positive)}"]
+        return {"decision": "COLLECT_MORE_DATA", "reasons": reasons + cells, "rule": rule}
+    if primary["moves"] < MIN_DECISION_MOVES:
+        reasons = [f"only {primary['moves']} moves at {PRIMARY_THRESHOLD_BPS:g} bps"]
+        return {"decision": "COLLECT_MORE_DATA", "reasons": reasons + cells, "rule": rule}
+    se = primary.get("se_c")
+    if se is None or primary["mean_c"] + 2 * se >= 0:
+        reasons = ["negative but within 2 SE of zero at the primary cell"]
+        return {"decision": "COLLECT_MORE_DATA", "reasons": reasons + cells, "rule": rule}
+    reasons = ["negative at every threshold at 100 and 250 ms, beyond 2 SE at the primary cell"]
+    return {"decision": "REJECT", "reasons": reasons + cells, "rule": rule}
 
 
 def lead_lag_contracts(
@@ -710,7 +805,7 @@ def analyze_quotes(
     for c in above:
         if c.instrument_id in quotes:
             updates[c.series] += int(quotes[c.instrument_id].ts.size)
-    return {
+    result: dict[str, Any] = {
         "window": {
             "start": iso_from_ns(start),
             "end": iso_from_ns(end),
@@ -731,12 +826,15 @@ def analyze_quotes(
         "config": asdict(cfg),
         "moves_by_threshold": moves_found,
         "summary": summarize_samples(samples, cfg),
+        "pooled": summarize_samples(samples, cfg, pooled=True),
         "baseline": _baseline_stats(base),
         "baseline_anchored": _baseline_stats(base_anchored),
         "lead_lag": lead_lag_contracts(
             contracts=above, quotes=quotes, ref_ts=ref_ts, ref_mid=ref_mid, cfg=cfg
         ),
     }
+    result["decision"] = live_decision(result)
+    return result
 
 
 def _f(v: Any, nd: int = 0) -> str:
@@ -760,6 +858,26 @@ def _edge_table(result: Mapping[str, Any], key: str, lat: Sequence[str]) -> list
             f"| {r['threshold_bps']:g} | {r['series']} | {r['samples']} | "
             f"{_f(lt['p25'])} / {_f(lt['median'])} / {_f(lt['p75'])} | "
             f"{_f(lt['share_beyond_horizon'], 2)} | " + " | ".join(cells) + " |"
+        )
+    return rows
+
+
+def _pooled_table(result: Mapping[str, Any], lat: Sequence[str]) -> list[str]:
+    rows = [
+        "| move ≥ bps | samples | moves | lifetime median ms | "
+        + " | ".join(f"{x} ms: mean ± 2 SE ¢ (share>0)" for x in lat)
+        + " |",
+        "|" + "---|" * (4 + len(lat)),
+    ]
+    for r in result.get("pooled", []):
+        cells = []
+        for x in lat:
+            e = r["anchored_edge_by_latency"].get(x, {})
+            band = f" ± {2 * e['se_c']:.2f}" if e.get("se_c") is not None else ""
+            cells.append(f"{_f(e.get('mean_c'), 2)}{band} ({_f(e.get('share_positive'), 2)})")
+        rows.append(
+            f"| {r['threshold_bps']:g} | {r['samples']} | {r['moves']} | "
+            f"{_f(r['lifetime_ms']['median'])} | " + " | ".join(cells) + " |"
         )
     return rows
 
@@ -788,14 +906,30 @@ def render_markdown(result: Mapping[str, Any]) -> str:
     )
     w.append(f"Moves found by threshold (bps in 1 s): {result.get('moves_by_threshold')}")
     w.append("")
+    dec = result.get("decision") or {}
+    if dec:
+        w.append(f"## Decision: `{dec.get('decision')}` (stale-quote taker on these books)")
+        w.append("")
+        w += [f"* {r}" for r in dec.get("reasons", [])]
+        w.append("")
+        w.append(f"Rule, fixed before the first live run: {dec.get('rule')}")
+        w.append("")
     w.append("## Market-anchored executable edge after fees (primary latency measure)")
     w.append("")
     w.append(
         "Fair value = Kalshi's own mid 1 s before the move + the model's predicted change from "
         "the BTC move; edge = fair - price - taker fee, for the book observed L ms after the "
-        "move. Lifetime = how long the quote a taker would hit survived."
+        "move. Lifetime = how long the quote a taker would hit survived. Standard errors are "
+        "clustered by move (every in-play strike reacts to the same move)."
     )
     w.append("")
+    if result.get("pooled"):
+        w.append("All series pooled:")
+        w.append("")
+        w += _pooled_table(result, lat)
+        w.append("")
+        w.append("By series:")
+        w.append("")
     w += _edge_table(result, "anchored_edge_by_latency", lat)
     w.append("")
     w.append(_baseline_line("No-move baseline (anchored)", result.get("baseline_anchored", {})))
