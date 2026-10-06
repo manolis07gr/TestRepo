@@ -40,6 +40,30 @@ Uses `config/base.yaml` + `config/live_study.yaml` (raw store `data/live_study/r
 streams the raw store once, so memory follows top-of-book changes rather than raw messages.
 Method and the pre-registered decision rule: `docs/EDGE_EVALUATION_METHOD.md` section 6.
 
+Longer collections are analysed in windows (for example one per day) and pooled exactly:
+`analyze --out data/live_study/windows/<day>` also writes `samples.jsonl.gz`, and
+`python scripts/live_study.py pool --windows data/live_study/windows/* --out reports/live_study`
+rebuilds every table and the decision from all windows' samples (lead-lag stays per window).
+`python scripts/latency_probe.py` prints round-trip times from the collecting machine to Kalshi
+and Coinbase (read-only); read the study's latency grid against them. From a Claude cloud session
+(through its HTTPS proxy) both were about 60 ms in October 2026.
+
+## Hold-to-settlement study (history)
+
+```bash
+python scripts/settlement_study.py fetch --since 2025-12-01     # ~50 min at 10 req/s; resumable
+python scripts/settlement_study.py analyze --out reports/settlement_study
+cma report --evaluation reports/edge_evaluation/evaluation.json --out reports/edge_evaluation \
+  --live reports/live_study/summary.json --settlement reports/settlement_study/summary.json
+```
+
+`fetch` downloads every settled `KXBTC15M` market with its 1-minute YES bid/ask candles (Kalshi
+serves markets settled before its archive cutoff from `/historical/...`), Coinbase BTC-USD
+1-minute candles and hourly Deribit DVOL into `data/settlement/` (~60 MB, git-ignored).
+Kalshi requests are signed when `KALSHI_API_KEY_ID` / `KALSHI_PRIVATE_KEY` are set, which only
+raises the read limit; the fetcher has no order path. Re-running `fetch` completes a partial
+download. Method and the pre-registered rule: `docs/EDGE_EVALUATION_METHOD.md` section 7.
+
 ## Map and review
 
 `MappingRegistry` proposals from `cma.mapping.parsers` are always DRAFT. A reviewer affirms

@@ -16,16 +16,22 @@ from cma.domain.time import NS_PER_MS, NS_PER_S
 from cma.research.live_study import (
     AboveContract,
     Quote,
+    Sample,
     StudyConfig,
     analyze,
     clustered_stats,
     detect_moves,
     executable_edge_c,
     live_decision,
+    pool_windows,
     reaction_ms,
+    read_window,
     render_markdown,
+    sample_from_row,
+    sample_to_row,
     stale_lifetime_ms,
     stream_quotes,
+    write_outputs,
 )
 from cma.storage.raw import RawRecorder
 from tests.factories import contract, snapshot
@@ -320,3 +326,94 @@ def test_stream_quotes_checks_kalshi_sequence_per_subscription(tmp_path: Path) -
     k = stats["KALSHI"]
     assert (k["subscriptions"], k["subscription_gaps"]) == (1, 1)
     assert k["books_invalid_at_end"] == 1  # b never got a new snapshot
+
+
+def _jump_window(t0: int) -> dict[str, object]:
+    """The single-jump market of test_analyze_finds_a_stale_quote_after_a_reference_jump,
+    starting at ``t0``."""
+    c = dataclasses.replace(
+        contract(KX, resolve_ts_ns=t0 + 3600 * NS_PER_S),
+        series_id="KXBTCD",
+        settlement_metadata={"strike_type": "greater", "floor_strike": 100_000.0},
+    )
+    events = []
+    for k in range(-1200, 600):
+        px = 100_000.0 if k < 0 else 100_110.0
+        events.append(
+            snapshot(
+                "COINBASE:BTC-USD",
+                None,
+                t0 + k * 100 * NS_PER_MS,
+                [(f"{px - 0.5:.2f}", "1")],
+                [(f"{px + 0.5:.2f}", "1")],
+                venue=Venue.COINBASE,
+            )
+        )
+    for k in range(-120, 0):
+        events.append(snapshot(KX, None, t0 + k * NS_PER_S, [("0.49", "100")], [("0.51", "100")]))
+    for k in range(60):
+        t = t0 + 600 * NS_PER_MS + k * NS_PER_S
+        events.append(snapshot(KX, None, t, [("0.57", "100")], [("0.59", "100")]))
+    events.sort(key=lambda e: e.recv_ts_ns)
+    return analyze(events, [c], cfg=StudyConfig(), dvol=[(t0 - 600 * NS_PER_S, 50.0)])
+
+
+def test_samples_round_trip_through_rows() -> None:
+    s = Sample(
+        t0_ns=T,
+        contract_id="K",
+        series="KXBTCD",
+        threshold_bps=5.0,
+        move_bps=6.1,
+        direction=-1,
+        tte_s=600.0,
+        fair_before=0.4,
+        fair_after=0.35,
+        stale_price=0.38,
+        lifetime_ms=None,
+        reaction_ms=None,
+        reaction_censored=True,
+        edge_c={0: 1.5, 100: None},
+        qty={0: 10.0, 100: None},
+        anchored_edge_c={0: 0.5, 100: None},
+    )
+    assert sample_from_row(json.loads(json.dumps(sample_to_row(s)))) == s
+
+
+def test_pool_windows_rebuilds_tables_from_every_window(tmp_path: Path) -> None:
+    windows = []
+    for i, t0 in enumerate((T, T + 20_000 * NS_PER_S)):
+        res = _jump_window(t0)
+        res["raw_messages"] = 100
+        res["book_quality"] = {"KALSHI": {"deltas_applied": 5, "subscription_gaps": 1}}
+        out = tmp_path / f"w{i}"
+        paths = write_outputs(res, out)
+        assert [p.name for p in paths] == ["summary.json", "summary.md", "samples.jsonl.gz"]
+        assert "samples" not in json.loads((out / "summary.json").read_text())
+        windows.append(read_window(out))
+    one = windows[0][0]
+    assert len(windows[0][1]) == sum(r["samples"] for r in one["pooled"])
+    pooled = pool_windows(windows)
+    assert pooled["window"]["windows"] == 2
+    assert pooled["window"]["hours"] == pytest.approx(2 * one["window"]["hours"])
+    rows = {r["threshold_bps"]: r for r in pooled["pooled"]}
+    single = {r["threshold_bps"]: r for r in one["pooled"]}
+    assert rows[10.0]["samples"] == 2 * single[10.0]["samples"]
+    assert rows[10.0]["moves"] == 2 * single[10.0]["moves"]
+    cell, cell1 = (
+        rows[10.0]["anchored_edge_by_latency"]["100"],
+        single[10.0]["anchored_edge_by_latency"]["100"],
+    )
+    assert cell["mean_c"] == pytest.approx(cell1["mean_c"])
+    assert cell["moves"] == 2
+    assert pooled["moves_by_threshold"]["10"] == 2
+    assert pooled["raw_messages"] == 200
+    assert pooled["book_quality"]["KALSHI"] == {"deltas_applied": 10, "subscription_gaps": 2}
+    assert pooled["baseline"]["n"] == 2 * one["baseline"]["n"]
+    assert pooled["baseline"]["mean_c"] == pytest.approx(one["baseline"]["mean_c"])
+    assert pooled["decision"]["decision"] in {"REJECT", "COLLECT_MORE_DATA"}
+    assert all("window_start" in o for o in pooled["lead_lag"])
+    assert "Decision" in render_markdown(pooled)
+    # a window without samples (older summaries) still pools its counters
+    summary_only = (dict(one), [])
+    assert pool_windows([summary_only])["raw_messages"] == 100

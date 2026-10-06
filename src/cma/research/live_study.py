@@ -24,6 +24,7 @@ from __future__ import annotations
 
 import bisect
 import dataclasses
+import gzip
 import json
 import math
 import re
@@ -1015,6 +1016,7 @@ def analyze_quotes(
         ),
     }
     result["decision"] = live_decision(result)
+    result["samples"] = [sample_to_row(s) for s in samples]
     return result
 
 
@@ -1162,9 +1164,162 @@ def render_markdown(result: Mapping[str, Any]) -> str:
 
 
 def write_outputs(result: Mapping[str, Any], out_dir: Path) -> list[Path]:
+    """summary.json + summary.md; the per-sample rows (for pooling windows later) go to
+    samples.jsonl.gz instead of the summary."""
     out_dir.mkdir(parents=True, exist_ok=True)
+    summary = {k: v for k, v in result.items() if k != "samples"}
     js = out_dir / "summary.json"
-    js.write_text(json.dumps(result, indent=1, default=str) + "\n")
+    js.write_text(json.dumps(summary, indent=1, default=str) + "\n")
     md = out_dir / "summary.md"
-    md.write_text(render_markdown(result))
-    return [js, md]
+    md.write_text(render_markdown(summary))
+    paths = [js, md]
+    if result.get("samples") is not None:
+        sp = out_dir / SAMPLES_FILE
+        with gzip.open(sp, "wt", encoding="utf-8") as fh:
+            for row in result["samples"]:
+                fh.write(json.dumps(row, separators=(",", ":")) + "\n")
+        paths.append(sp)
+    return paths
+
+
+# ----------------------------------------------------------------------------- pooling windows
+
+SAMPLES_FILE = "samples.jsonl.gz"
+
+
+def sample_to_row(s: Sample) -> dict[str, Any]:
+    return {
+        "t0": s.t0_ns,
+        "c": s.contract_id,
+        "s": s.series,
+        "thr": s.threshold_bps,
+        "mv": s.move_bps,
+        "dir": s.direction,
+        "tte": s.tte_s,
+        "fb": s.fair_before,
+        "fa": s.fair_after,
+        "px": s.stale_price,
+        "life": s.lifetime_ms,
+        "react": s.reaction_ms,
+        "rc": s.reaction_censored,
+        "e": {str(k): v for k, v in s.edge_c.items()},
+        "q": {str(k): v for k, v in s.qty.items()},
+        "a": {str(k): v for k, v in s.anchored_edge_c.items()},
+    }
+
+
+def sample_from_row(r: Mapping[str, Any]) -> Sample:
+    return Sample(
+        t0_ns=int(r["t0"]),
+        contract_id=str(r["c"]),
+        series=str(r["s"]),
+        threshold_bps=float(r["thr"]),
+        move_bps=float(r["mv"]),
+        direction=int(r["dir"]),
+        tte_s=float(r["tte"]),
+        fair_before=float(r["fb"]),
+        fair_after=float(r["fa"]),
+        stale_price=float(r["px"]),
+        lifetime_ms=r["life"],
+        reaction_ms=r["react"],
+        reaction_censored=bool(r["rc"]),
+        edge_c={int(k): v for k, v in r["e"].items()},
+        qty={int(k): v for k, v in r["q"].items()},
+        anchored_edge_c={int(k): v for k, v in r["a"].items()},
+    )
+
+
+def read_window(out_dir: Path) -> tuple[dict[str, Any], list[Sample]]:
+    """A window written by :func:`write_outputs`: its summary and its samples."""
+    summary: dict[str, Any] = json.loads((out_dir / "summary.json").read_text())
+    samples: list[Sample] = []
+    sp = out_dir / SAMPLES_FILE
+    if sp.exists():
+        with gzip.open(sp, "rt", encoding="utf-8") as fh:
+            samples = [sample_from_row(json.loads(line)) for line in fh if line.strip()]
+    return summary, samples
+
+
+def _pool_baseline(parts: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
+    """n-weighted mean and share of positive edges (percentiles do not pool)."""
+    rows = [b for b in parts if b.get("n")]
+    n = sum(int(b["n"]) for b in rows)
+    if not n:
+        return {"n": 0, "share_positive": None, "mean_c": None, "p95_c": None}
+    return {
+        "n": n,
+        "share_positive": sum(b["n"] * (b["share_positive"] or 0.0) for b in rows) / n,
+        "mean_c": sum(b["n"] * (b["mean_c"] or 0.0) for b in rows) / n,
+        "p95_c": None,
+    }
+
+
+def _sum_counters(parts: Sequence[Mapping[str, Mapping[str, int]]]) -> dict[str, dict[str, int]]:
+    out: dict[str, dict[str, int]] = {}
+    for part in parts:
+        for venue, counters in part.items():
+            acc = out.setdefault(venue, {})
+            for k, v in counters.items():
+                acc[k] = acc.get(k, 0) + int(v)
+    return out
+
+
+def pool_windows(
+    windows: Sequence[tuple[Mapping[str, Any], Sequence[Sample]]],
+    cfg: StudyConfig | None = None,
+) -> dict[str, Any]:
+    """One study over several capture windows (e.g. daily runs of a 14-day collection).
+
+    Tables are rebuilt from every window's samples, so means and move-clustered standard
+    errors are exact; baselines pool as n-weighted means; lead-lag stays per window (it
+    needs the raw series). The decision is the same pre-registered rule."""
+    cfg = cfg or StudyConfig()
+    results = [w for w, _ in windows if "window" in w]
+    samples = [s for _, ss in windows for s in ss]
+    hours = sum(float(w["window"]["hours"]) for w in results)
+
+    def weighted(get: Callable[[Mapping[str, Any]], float | None]) -> float | None:
+        pairs = [(float(w["window"]["hours"]), v) for w in results if (v := get(w)) is not None]
+        total = sum(h for h, _ in pairs)
+        return sum(h * v for h, v in pairs) / total if total else None
+
+    rv2 = weighted(lambda w: (w["reference"].get("realized_vol") or 0.0) ** 2)
+    moves: dict[str, int] = {}
+    for w in results:
+        for thr, n in (w.get("moves_by_threshold") or {}).items():
+            moves[thr] = moves.get(thr, 0) + int(n)
+    result: dict[str, Any] = {
+        "window": {
+            "start": min((w["window"]["start"] for w in results), default=None),
+            "end": max((w["window"]["end"] for w in results), default=None),
+            "hours": hours,
+            "windows": len(results),
+        },
+        "windows": [w["window"] for w in results],
+        "raw_messages": sum(int(w.get("raw_messages") or 0) for w in results),
+        "reference": {
+            "instrument": REFERENCE,
+            "updates": sum(int(w["reference"].get("updates") or 0) for w in results),
+            "realized_vol": math.sqrt(rv2) if rv2 is not None else None,
+            "dvol_points": sum(int(w["reference"].get("dvol_points") or 0) for w in results),
+            "dvol_mean": weighted(lambda w: w["reference"].get("dvol_mean")),
+        },
+        "contracts": {
+            k: max((int((w.get("contracts") or {}).get(k) or 0) for w in results), default=0)
+            for k in ("above_strike", "with_quotes")
+        },
+        "config": asdict(cfg),
+        "moves_by_threshold": moves,
+        "summary": summarize_samples(samples, cfg),
+        "pooled": summarize_samples(samples, cfg, pooled=True),
+        "baseline": _pool_baseline([w.get("baseline") or {} for w in results]),
+        "baseline_anchored": _pool_baseline([w.get("baseline_anchored") or {} for w in results]),
+        "book_quality": _sum_counters([w.get("book_quality") or {} for w in results]),
+        "lead_lag": [
+            {**o, "window_start": w["window"]["start"]}
+            for w in results
+            for o in w.get("lead_lag") or []
+        ],
+    }
+    result["decision"] = live_decision(result)
+    return result

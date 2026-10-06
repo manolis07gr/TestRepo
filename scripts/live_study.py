@@ -2,6 +2,7 @@
 
   python scripts/live_study.py collect --duration 7000      # raw capture (needs network)
   python scripts/live_study.py analyze --out reports/live_study
+  python scripts/live_study.py pool --windows data/live_study/windows/* --out reports/live_study
 
 ``collect`` runs the production collector with config/base.yaml + config/live_study.yaml and
 prints a one-line health summary every ``--report-every`` seconds. ``analyze`` streams the
@@ -25,6 +26,8 @@ from cma.research.live_study import (
     StudyConfig,
     above_contracts,
     analyze_quotes,
+    pool_windows,
+    read_window,
     stream_quotes,
     write_outputs,
 )
@@ -101,6 +104,25 @@ def cmd_analyze(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_pool(args: argparse.Namespace) -> int:
+    windows = [read_window(Path(d)) for d in args.windows]
+    result = pool_windows(windows, StudyConfig())
+    paths = write_outputs(result, Path(args.out))
+    dec = result["decision"]
+    print(
+        json.dumps(
+            {
+                "windows": len(windows),
+                "hours": round(result["window"]["hours"], 2),
+                "samples": sum(len(s) for _, s in windows),
+                "decision": dec["decision"],
+                "outputs": [str(p) for p in paths],
+            }
+        )
+    )
+    return 0
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
     sub = ap.add_subparsers(dest="cmd", required=True)
@@ -109,8 +131,12 @@ def main() -> int:
     c.add_argument("--report-every", type=float, default=60.0)
     a = sub.add_parser("analyze")
     a.add_argument("--out", default="reports/live_study")
+    pl = sub.add_parser("pool", help="combine analysed windows (summary.json + samples)")
+    pl.add_argument("--windows", nargs="+", required=True, help="analyze --out directories")
+    pl.add_argument("--out", default="reports/live_study")
     args = ap.parse_args()
-    return cmd_collect(args) if args.cmd == "collect" else cmd_analyze(args)
+    commands = {"collect": cmd_collect, "analyze": cmd_analyze, "pool": cmd_pool}
+    return commands[args.cmd](args)
 
 
 if __name__ == "__main__":

@@ -17,3 +17,4 @@ data/
 /reports/runs/
 .hypothesis/
 coverage.json
+/reports/live_study/samples.jsonl.gz
