@@ -298,8 +298,91 @@ def live_markdown(live: Mapping[str, Any]) -> list[str]:
     return out
 
 
+def settlement_spec_text(sel: Mapping[str, Any]) -> str:
+    vol = "Deribit DVOL" if sel.get("vol") == "dvol" else "60-minute realised vol"
+    return f"{vol}, edge at least {float(sel.get('theta_c', 0)):g}¢ after the fee"
+
+
+def settlement_edge_summary(settle: Mapping[str, Any]) -> str:
+    """'+0.12 ± 0.34¢ per contract out of sample (4,321 trades; DVOL, edge >= 2¢)'."""
+    sel = settle.get("selected")
+    if not sel:
+        return "no specification had enough trades"
+    o = sel["out_of_sample"]
+    return (
+        f"{edge_band(o)}¢ per contract after fees out of sample ({_n(o.get('n'))} trades; "
+        f"{settlement_spec_text(sel)})"
+    )
+
+
+def settlement_markdown(settle: Mapping[str, Any]) -> list[str]:
+    """Condensed hold-to-settlement section (full tables in reports/settlement_study)."""
+    d = settle.get("data", {})
+    dec = settle.get("decision", {})
+    sel = settle.get("selected") or {}
+    ins, oos = d.get("in_sample", {}), d.get("out_of_sample", {})
+    out = ["## Hold-to-settlement check on history: Kalshi 15-minute BTC markets", ""]
+    out.append(
+        f"* {_n(d.get('markets_usable'))} settled `KXBTC15M` markets with 1-minute YES bid/ask "
+        f"candles, {str(ins.get('first_close', ''))[:10]} to "
+        f"{str(oos.get('last_close', ''))[:10]}: in-sample {_n(ins.get('markets'))} markets "
+        f"(to {str(ins.get('last_close', ''))[:10]}), out-of-sample {_n(oos.get('markets'))}."
+    )
+    out.append(
+        "* Strategy: in each market, the first minute where the options-style model's edge "
+        "after the Kalshi taker fee clears a threshold; buy that side, filled at the next "
+        "minute's quote, and hold to settlement. The in-sample t-statistic picks the "
+        "volatility input and threshold; the out-of-sample half decides."
+    )
+    if sel:
+        o = sel["out_of_sample"]
+        out.append(
+            f"* Selected in-sample: {settlement_spec_text(sel)} "
+            f"({edge_band(sel['in_sample'])}¢, {_n(sel['in_sample'].get('n'))} trades). "
+            f"Out of sample: **{edge_band(o)}¢ per contract** on {_n(o.get('n'))} trades "
+            f"(win rate {_f(100 * (o.get('win_rate') or 0), 1)}%); fees × 1.5 "
+            f"{edge_band(sel['oos_fee_stress'])}¢, filled two minutes later "
+            f"{edge_band(sel['oos_delay_stress'])}¢, same-minute fill (optimistic) "
+            f"{edge_band(sel['oos_same_minute_fill'])}¢. ± is 2 day-clustered SE."
+        )
+    five = next(
+        (x for x in settle.get("diagnostics", []) if x.get("minutes_before_close") == 5), None
+    )
+    if five and "brier" in five:
+        br = five["brier"]
+        gap = five["outcome_on_mid_and_model_gap"]["dvol"]
+        out.append(
+            f"* Forecast quality 5 minutes before close ({_n(five.get('n'))} markets): Brier "
+            f"score {br['kalshi_mid']:.4f} for Kalshi's mid vs {br['model_dvol']:.4f} for the "
+            f"model (DVOL) and {br['model_rv60']:.4f} (60-minute vol), lower is better. "
+            f"Regressing the outcome on the mid and the model-mid gap gives a gap coefficient "
+            f"of {gap['gap_coef']:+.3f} ± {2 * gap['gap_se']:.3f}: "
+            + (
+                "the model adds information the price does not contain."
+                if gap["gap_coef"] - 2 * gap["gap_se"] > 0
+                else "the model adds nothing the price does not already contain."
+            )
+        )
+    b = d.get("basis", {})
+    if b.get("marks"):
+        out.append(
+            f"* Coinbase vs the settlement index (CF Benchmarks BRTI) over {_n(b['marks'])} "
+            f"quarter-hour marks: median {b['median_bp']:+.2f} bp (5-95%: "
+            f"{b['p05_bp']:+.2f} to {b['p95_bp']:+.2f} bp), corrected for in the model."
+        )
+    out.append(
+        f"* **Decision `{dec.get('decision')}`** by the rule fixed before the first run "
+        "(docs/EDGE_EVALUATION_METHOD.md section 7). Full tables: "
+        "`reports/settlement_study/summary.md`."
+    )
+    out.append("")
+    return out
+
+
 def decision_summary(
-    result: Mapping[str, Any], live: Mapping[str, Any] | None = None
+    result: Mapping[str, Any],
+    live: Mapping[str, Any] | None = None,
+    settle: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
     bases = result.get("base_cases", [])
     dec = (live or {}).get("decision") or {}
@@ -318,10 +401,21 @@ def decision_summary(
         out["real_market_reasons"] = dec.get("reasons", [])
         out["real_market_rule"] = dec.get("rule")
         out["real_market_window"] = (live or {}).get("window")
+    if settle:
+        sd = settle.get("decision") or {}
+        out["settlement_decision"] = sd.get("decision")
+        out["settlement_reasons"] = sd.get("reasons", [])
+        out["settlement_period"] = {
+            k: (settle.get("data") or {}).get(k) for k in ("in_sample", "out_of_sample")
+        }
     return out
 
 
-def render_markdown(result: Mapping[str, Any], live: Mapping[str, Any] | None = None) -> str:
+def render_markdown(
+    result: Mapping[str, Any],
+    live: Mapping[str, Any] | None = None,
+    settle: Mapping[str, Any] | None = None,
+) -> str:
     man = result.get("manifest", {})
     plan = result.get("plan", {})
     bases = result.get("base_cases", [])
@@ -366,6 +460,13 @@ def render_markdown(result: Mapping[str, Any], live: Mapping[str, Any] | None = 
             "network policy), so no real-market claim is made. The platform is ready to collect "
             "and evaluate as soon as access exists (see *Next steps*)."
         )
+    if settle:
+        w(
+            f"* **History, held to settlement (Kalshi 15-minute BTC markets): "
+            f"`{(settle.get('decision') or {}).get('decision')}`** for buying the side the "
+            f"options-style model favours: {settlement_edge_summary(settle)}. See "
+            "*Hold-to-settlement check* below."
+        )
     for b in bases:
         w(
             f"* Synthetic base case `{b['label']}`: **`{b['decision']}`** — "
@@ -383,6 +484,8 @@ def render_markdown(result: Mapping[str, Any], live: Mapping[str, Any] | None = 
 
     if live:
         lines += live_markdown(live)
+    if settle:
+        lines += settlement_markdown(settle)
     w("## 1. Data, instruments and exclusions")
     w("")
     if kal:
@@ -811,6 +914,23 @@ def render_markdown(result: Mapping[str, Any], live: Mapping[str, Any] | None = 
         "Look beyond latency taking: passive quoting, which pays far lower fees than taking, "
         "and near-expiry contracts where delta is high.",
     )
+    settle_dec = (settle or {}).get("decision", {}).get("decision")
+    if settle_dec == "FORWARD_PAPER_CANDIDATE":
+        w(
+            "* Forward-paper the selected hold-to-settlement specification for >= 14 days "
+            "(`cma paper`) against live books, comparing real fills with the candle quotes; "
+            "only then consider a separate live-money review."
+        )
+    elif settle_dec == "COLLECT_MORE_DATA":
+        w(
+            "* Hold-to-settlement: extend the history (more months, the hourly `KXBTCD` "
+            "ladders) and re-run `scripts/settlement_study.py analyze` before paper trading."
+        )
+    elif settle_dec == "REJECT":
+        w(
+            "* Hold-to-settlement on the options-style model is rejected on ten months of "
+            "history; a new signal needs its own pre-registered test, not a re-tune of this one."
+        )
     for item in (
         steps_live
         if live
@@ -834,15 +954,20 @@ def render_markdown(result: Mapping[str, Any], live: Mapping[str, Any] | None = 
 
 
 def write_reports(
-    result: Mapping[str, Any], out_dir: Path, *, live: Mapping[str, Any] | None = None
+    result: Mapping[str, Any],
+    out_dir: Path,
+    *,
+    live: Mapping[str, Any] | None = None,
+    settle: Mapping[str, Any] | None = None,
 ) -> list[Path]:
-    """DECISION_REPORT.md, decision.json and the HTML page; ``live`` is a live-study summary."""
+    """DECISION_REPORT.md, decision.json and the HTML page; ``live`` is a live-study summary
+    and ``settle`` a hold-to-settlement study summary."""
     out_dir.mkdir(parents=True, exist_ok=True)
     md = out_dir / "DECISION_REPORT.md"
-    md.write_text(render_markdown(result, live), encoding="utf-8")
+    md.write_text(render_markdown(result, live, settle), encoding="utf-8")
     js = out_dir / "decision.json"
-    js.write_text(json.dumps(decision_summary(result, live), indent=1, default=str) + "\n")
+    js.write_text(json.dumps(decision_summary(result, live, settle), indent=1, default=str) + "\n")
     from cma.research.report_html import write_html
 
-    page = write_html(result, out_dir, live=live)
+    page = write_html(result, out_dir, live=live, settle=settle)
     return [md, js, page]

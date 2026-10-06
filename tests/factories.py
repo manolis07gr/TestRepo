@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import math
+import random
 from collections.abc import Callable, Iterable, Sequence
 from dataclasses import dataclass, field
 from decimal import Decimal
@@ -43,6 +45,8 @@ from cma.domain.models import (
 )
 from cma.domain.time import NS_PER_MS, NS_PER_S
 from cma.execution.latency import LatencyModel, LatencyProfile
+from cma.features.fair_value import prob_above
+from cma.research.settlement_data import Candle, SettledMarket
 from cma.storage.events_io import read_events_jsonl
 
 FIXTURES = Path(__file__).resolve().parent / "fixtures"
@@ -300,3 +304,73 @@ def run_replay(
 
 def ms(k: float) -> int:
     return T0 + round(k * NS_PER_MS)
+
+
+# ----------------------------------------------------------------------------- settlement study
+
+SETTLEMENT_T0 = 1_767_225_600  # 2026-01-01T00:00:00Z
+MINUTES_PER_YEAR = 365.25 * 24 * 60
+
+
+def settlement_market(i: int, open_ts: int, strike: float, settle: float) -> SettledMarket:
+    tk = f"KXBTC15M-T{i:05d}"
+    return SettledMarket(
+        ticker=tk,
+        event_ticker=tk,
+        series="KXBTC15M",
+        open_ts=open_ts,
+        close_ts=open_ts + 900,
+        strike_type="greater_or_equal",
+        floor_strike=strike,
+        cap_strike=None,
+        result="yes" if settle >= strike else "no",
+        expiration_value=settle,
+        archived=False,
+    )
+
+
+def settlement_world(
+    n_markets: int, *, true_vol: float, kalshi_vol: float, dvol_pct: float, seed: int = 7
+) -> tuple[list[SettledMarket], dict[str, list[Candle]], list[list[float]], list[list[float]]]:
+    """A BTC path with ``true_vol``; Kalshi quotes the log-normal digital with ``kalshi_vol``
+    (1c spread); DVOL reads ``dvol_pct``. The candle starting at t0 + 60 j closes at
+    price[j + 1], the price at the end of that minute."""
+    t0 = SETTLEMENT_T0
+    rng = random.Random(seed)
+    minutes = n_markets * 15 + 240
+    sig = true_vol / math.sqrt(MINUTES_PER_YEAR)
+    price = [60_000.0]
+    for _ in range(minutes):
+        price.append(price[-1] * math.exp(rng.gauss(0.0, sig)))
+    coinbase = [[t0 + 60 * j, *([price[j + 1]] * 4), 1.0] for j in range(minutes)]
+    dvol = [[t0 + 3600 * h, dvol_pct] for h in range(minutes // 60 + 2)]  # hourly closes
+
+    def at(t: int) -> float:
+        return price[(t - t0) // 60]
+
+    markets: list[SettledMarket] = []
+    candles: dict[str, list[Candle]] = {}
+    first_open = t0 + 240 * 60
+    for i in range(n_markets):
+        o = first_open + 900 * i
+        m = settlement_market(i, o, at(o), at(o + 900))
+        markets.append(m)
+        rows: list[Candle] = []
+        for k in range(1, 16):
+            e = o + 60 * k
+            if k < 15:
+                f = prob_above(
+                    spot=at(e),
+                    strike=m.floor_strike or 0.0,
+                    now_ns=e * NS_PER_S,
+                    observation_end_ns=m.close_ts * NS_PER_S,
+                    sigma=kalshi_vol,
+                    observation_method="AVG_60S_BEFORE",
+                )
+            else:
+                f = 1.0 if m.result == "yes" else 0.0
+            mid = min(max(f, 0.02), 0.98)
+            bid, ask = round(mid - 0.005, 3), round(mid + 0.005, 3)
+            rows.append((e, bid, bid, bid, bid, ask, ask, ask, ask, 100.0))
+        candles[m.ticker] = rows
+    return markets, candles, coinbase, dvol

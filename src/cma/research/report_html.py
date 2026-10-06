@@ -11,6 +11,7 @@ import json
 import math
 import re
 from collections.abc import Mapping, Sequence
+from datetime import date
 from pathlib import Path
 from typing import Any
 
@@ -846,7 +847,349 @@ def _ex_ante_table(base: Mapping[str, Any]) -> str:
     )
 
 
-def render_fragment(result: Mapping[str, Any], live: Mapping[str, Any] | None = None) -> str:
+# ----------------------------------------------------------------------------- settlement
+
+
+SETTLE_GATE_LABELS = {
+    "oos_mean_above_2se": "mean P&L more than two standard errors above zero",
+    "fees_x1_5_positive": "still positive with fees × 1.5",
+    "two_minute_fill_positive": "still positive filled two minutes later",
+    "min_trades": "at least 200 trades",
+    "top_day_share": "no single day above 70% of the P&L",
+    "neighbours_profitable": "neighbouring thresholds profitable too",
+    "months_positive": "positive in at least half of the months",
+}
+
+
+def _settle_months(settle: Mapping[str, Any]) -> str:
+    d = settle.get("data", {})
+    first = str(d.get("in_sample", {}).get("first_close", ""))[:10]
+    last = str(d.get("out_of_sample", {}).get("last_close", ""))[:10]
+    try:
+        days = (date.fromisoformat(last) - date.fromisoformat(first)).days
+    except ValueError:
+        return "months of"
+    words = {
+        1: "one",
+        2: "two",
+        3: "three",
+        4: "four",
+        5: "five",
+        6: "six",
+        7: "seven",
+        8: "eight",
+        9: "nine",
+        10: "ten",
+        11: "eleven",
+        12: "twelve",
+    }
+    months = max(1, round(days / 30.44))
+    return "one month of" if months == 1 else f"{words.get(months, str(months))} months of"
+
+
+def settlement_lede(settle: Mapping[str, Any]) -> str:
+    """One or two sentences on the hold-to-settlement result for the page's lede."""
+    sel = settle.get("selected")
+    dec = (settle.get("decision") or {}).get("decision")
+    span = _settle_months(settle)
+    if not sel:
+        return f"On {span} settled 15-minute markets, no model signal traded often enough to test."
+    o = sel["out_of_sample"]
+    band = _band(o)
+    five: Mapping[str, Any] = next(
+        (x for x in settle.get("diagnostics", []) if x.get("minutes_before_close") == 5), {}
+    )
+    br = five.get("brier") or {}
+    market_better = bool(br) and br["kalshi_mid"] <= min(br["model_dvol"], br["model_rv60"])
+    if dec == "REJECT":
+        tail = (
+            " Kalshi's own prices forecast settlement better than the model did."
+            if market_better
+            else ""
+        )
+        return (
+            f"Holding to settlement doesn't rescue it: on {span} settled 15-minute markets, "
+            f"buying the side the options-style model favoured averaged {band}¢ per contract out "
+            f"of sample after fees.{tail}"
+        )
+    if dec == "FORWARD_PAPER_CANDIDATE":
+        return (
+            f"One thing does pass on history: on {span} settled 15-minute markets, buying the "
+            f"side the options-style model favoured and holding it to settlement averaged "
+            f"{band}¢ per contract out of sample after fees. That earns paper trading, not "
+            "money."
+        )
+    return (
+        f"On {span} settled 15-minute markets, buying the side the options-style model "
+        f"favoured and holding it to settlement averaged {band}¢ per contract out of sample after "
+        "fees, which is not yet distinguishable from zero."
+    )
+
+
+def settlement_verdict(settle: Mapping[str, Any]) -> tuple[str, str, str]:
+    sel = settle.get("selected")
+    dec = str((settle.get("decision") or {}).get("decision", "COLLECT_MORE_DATA"))
+    if not sel:
+        return ("History, held to settlement", dec, "no specification traded enough")
+    o = sel["out_of_sample"]
+    return (
+        "History, held to settlement (15-minute markets)",
+        dec,
+        f"{_band(o)}¢ per contract out of sample, {_fmt(o.get('n'), 0)} trades",
+    )
+
+
+def _calibration_svg(buckets: Sequence[Mapping[str, Any]], title: str) -> str:
+    """Kalshi mid vs how often YES settled, ±2 SE whiskers, with the diagonal."""
+    w, h = 300, 250
+    left, right, top, bottom = 38, 14, 10, 32
+    pw, ph = w - left - right, h - top - bottom
+
+    def x(v: float) -> float:
+        return left + pw * v
+
+    def y(v: float) -> float:
+        return top + ph * (1 - v)
+
+    parts = [f'<svg viewBox="0 0 {w} {h}" role="img" aria-label="{html.escape(title)}">']
+    for t in (0.0, 0.25, 0.5, 0.75, 1.0):
+        parts.append(
+            f'<line class="gridline" x1="{left}" x2="{w - right}" y1="{y(t):.1f}" y2="{y(t):.1f}"/>'
+        )
+        parts.append(f'<text x="{left - 6}" y="{y(t) + 3:.1f}" text-anchor="end">{t:g}</text>')
+        parts.append(
+            f'<text x="{x(t):.1f}" y="{h - bottom + 14}" text-anchor="middle">{t:g}</text>'
+        )
+    parts.append(
+        f'<line class="zero" stroke-dasharray="3 3" x1="{x(0):.1f}" y1="{y(0):.1f}" '
+        f'x2="{x(1):.1f}" y2="{y(1):.1f}"/>'
+    )
+    parts.append(
+        f'<text x="{left + pw / 2:.1f}" y="{h - 4}" text-anchor="middle">'
+        "Kalshi mid 5 minutes before close</text>"
+    )
+    pts = [b for b in buckets if b.get("n")]
+    for b in pts:
+        m, f, se = float(b["mean_mid"]), float(b["yes_freq"]), float(b["yes_freq_se"])
+        parts.append(
+            f'<line class="ci" x1="{x(m):.1f}" x2="{x(m):.1f}" y1="{y(max(f - 2 * se, 0)):.1f}" '
+            f'y2="{y(min(f + 2 * se, 1)):.1f}"/>'
+        )
+    if pts:
+        path = " ".join(
+            f"{'M' if j == 0 else 'L'}{x(float(b['mean_mid'])):.1f},{y(float(b['yes_freq'])):.1f}"
+            for j, b in enumerate(pts)
+        )
+        parts.append(f'<path class="s1" d="{path}"/>')
+    for b in pts:
+        m, f = float(b["mean_mid"]), float(b["yes_freq"])
+        tipt = (
+            f"mid {b['mid_lo']:.2f}–{b['mid_hi']:.2f}: <b>{_fmt(b['n'], 0)}</b> markets<br>"
+            f"mean mid <b>{m:.3f}</b>, YES settled <b>{f:.3f}</b> "
+            f"± {2 * float(b['yes_freq_se']):.3f}<br>buy YES at the ask "
+            f"<b>{_fmt(b['buy_yes_pnl_c'], 2, True)}¢</b>, buy NO "
+            f"<b>{_fmt(b['buy_no_pnl_c'], 2, True)}¢</b> per contract after fees"
+        )
+        parts.append(f'<circle class="d1" cx="{x(m):.1f}" cy="{y(f):.1f}" r="4"/>')
+        parts.append(
+            f'<circle class="hit" cx="{x(m):.1f}" cy="{y(f):.1f}" r="11" tabindex="0" '
+            f'data-tip="{html.escape(tipt)}"/>'
+        )
+    parts.append("</svg>")
+    return "".join(parts)
+
+
+def _threshold_svg(settle: Mapping[str, Any], title: str) -> str:
+    """Out-of-sample P&L by threshold for each volatility input, ±2 SE whiskers."""
+    cfg = settle.get("config", {})
+    thetas = [float(t) for t in cfg.get("thresholds_c", [])]
+    series = [("dvol", "s1", "d1"), ("rv60", "s2", "d2")]
+    min_n = int(cfg.get("min_trades", 200)) // 4  # a handful of trades is noise, not a point
+    rows = {
+        (r["vol"], float(r["theta_c"])): r["out_of_sample"]
+        for r in settle.get("grid", {}).values()
+        if (r["out_of_sample"].get("n") or 0) >= min_n
+    }
+    vals = [
+        v
+        for o in rows.values()
+        if o.get("mean_c") is not None
+        for v in (o["mean_c"] - 2 * (o.get("se_c") or 0), o["mean_c"] + 2 * (o.get("se_c") or 0))
+    ]
+    if not thetas or not vals:
+        return ""
+    ticks = _nice_ticks(min(*vals, 0.0), max(*vals, 0.0), 6)
+    w, h = 300, 210
+    left, right, top, bottom = 38, 14, 10, 30
+    pw, ph = w - left - right, h - top - bottom
+
+    def x(i: int) -> float:
+        return left + pw * i / max(len(thetas) - 1, 1)
+
+    def y(v: float) -> float:
+        return top + ph * (1 - (v - ticks[0]) / (ticks[-1] - ticks[0]))
+
+    parts = [f'<svg viewBox="0 0 {w} {h}" role="img" aria-label="{html.escape(title)}">']
+    for t in ticks:
+        cls = "zero" if abs(t) < 1e-12 else "gridline"
+        parts.append(
+            f'<line class="{cls}" x1="{left}" x2="{w - right}" y1="{y(t):.1f}" y2="{y(t):.1f}"/>'
+        )
+        parts.append(
+            f'<text x="{left - 6}" y="{y(t) + 3:.1f}" text-anchor="end">'
+            f"{_fmt(t, 1 if abs(t) < 10 else 0)}</text>"
+        )
+    for i, th in enumerate(thetas):
+        parts.append(
+            f'<text x="{x(i):.1f}" y="{h - bottom + 14}" text-anchor="middle">{th:g}</text>'
+        )
+    parts.append(
+        f'<text x="{left + pw / 2:.1f}" y="{h - 4}" text-anchor="middle">'
+        "minimum edge after the fee (¢)</text>"
+    )
+    for vol, line_cls, dot_cls in series:
+        pts = [
+            (i, o)
+            for i, th in enumerate(thetas)
+            if (o := rows.get((vol, th))) is not None and o.get("mean_c") is not None
+        ]
+        for i, o in pts:
+            if o.get("se_c"):
+                parts.append(
+                    f'<line class="ci" style="stroke:var(--{line_cls})" x1="{x(i):.1f}" '
+                    f'x2="{x(i):.1f}" y1="{y(o["mean_c"] - 2 * o["se_c"]):.1f}" '
+                    f'y2="{y(o["mean_c"] + 2 * o["se_c"]):.1f}"/>'
+                )
+        if pts:
+            path = " ".join(
+                f"{'M' if j == 0 else 'L'}{x(i):.1f},{y(o['mean_c']):.1f}"
+                for j, (i, o) in enumerate(pts)
+            )
+            parts.append(f'<path class="{line_cls}" d="{path}"/>')
+        name = "Deribit DVOL" if vol == "dvol" else "60-minute realised vol"
+        for i, o in pts:
+            tipt = (
+                f"{name}, edge ≥ <b>{thetas[i]:g}¢</b><br>out of sample "
+                f"<b>{_fmt(o['mean_c'], 2, True)}¢</b>/contract ({html.escape(_band(o))} at "
+                f"2 SE)<br><b>{_fmt(o.get('n'), 0)}</b> trades, win rate "
+                f"<b>{_fmt(100 * (o.get('win_rate') or 0), 1)}%</b>"
+            )
+            parts.append(
+                f'<circle class="{dot_cls}" cx="{x(i):.1f}" cy="{y(o["mean_c"]):.1f}" r="4"/>'
+            )
+            parts.append(
+                f'<circle class="hit" cx="{x(i):.1f}" cy="{y(o["mean_c"]):.1f}" r="11" '
+                f'tabindex="0" data-tip="{html.escape(tipt)}"/>'
+            )
+    parts.append("</svg>")
+    return "".join(parts)
+
+
+def _settlement_section(settle: Mapping[str, Any]) -> str:
+    d = settle.get("data", {})
+    sel = settle.get("selected") or {}
+    dec = settle.get("decision") or {}
+    five: Mapping[str, Any] = next(
+        (x for x in settle.get("diagnostics", []) if x.get("minutes_before_close") == 5), {}
+    )
+    br = five.get("brier") or {}
+    gap = (five.get("outcome_on_mid_and_model_gap") or {}).get("dvol") or {}
+    basis = d.get("basis") or {}
+    o = sel.get("out_of_sample") or {}
+    spec = (
+        ("Deribit DVOL" if sel.get("vol") == "dvol" else "60-minute realised vol")
+        + f", edge ≥ {float(sel.get('theta_c', 0)):g}¢"
+        if sel
+        else "none"
+    )
+    tiles = f"""
+<div class="tiles">
+  <div class="tile"><span class="label">Out of sample, selected strategy</span>
+    <span class="value {_cls(o.get("mean_c"))}">{_fmt(o.get("mean_c"), 2, True)}¢</span>
+    <span class="note">per contract after fees, ± {_fmt(2 * (o.get("se_c") or 0), 2)} (2 SE);
+    {_fmt(o.get("n"), 0)} trades; {html.escape(spec)}</span></div>
+  <div class="tile"><span class="label">Forecast error 5 min before close</span>
+    <span class="value">{_fmt(br.get("kalshi_mid"), 4)} <span style="font-size:15px;color:var(--ink-3)">vs</span> {_fmt(br.get("model_dvol"), 4)}</span>
+    <span class="note">Brier score, Kalshi mid vs model (DVOL); lower is better</span></div>
+  <div class="tile"><span class="label">What the model adds to the price</span>
+    <span class="value">{_fmt(gap.get("gap_coef"), 2, True)}</span>
+    <span class="note">outcome on mid + model–mid gap; ± {_fmt(2 * (gap.get("gap_se") or 0), 2)}; 0 = nothing, 1 = model is right</span></div>
+  <div class="tile"><span class="label">Coinbase vs settlement index</span>
+    <span class="value">{_fmt(basis.get("median_bp"), 1, True)} bp</span>
+    <span class="note">median over {_fmt(basis.get("marks"), 0)} quarter-hour marks; corrected in the model</span></div>
+</div>"""
+    rows = "".join(
+        f"<tr{' style="background:var(--accent-soft)"' if key == sel.get('spec') else ''}>"
+        f"<td>{'DVOL' if r['vol'] == 'dvol' else '60-min vol'}</td><td>{float(r['theta_c']):g}</td>"
+        f"<td>{_fmt(r['in_sample']['n'], 0)}</td><td>{html.escape(_band(r['in_sample']))}</td>"
+        f"<td>{_fmt(r['out_of_sample']['n'], 0)}</td>"
+        f"<td>{html.escape(_band(r['out_of_sample']))}</td>"
+        f"<td>{_fmt(100 * (r['out_of_sample'].get('win_rate') or 0), 1)}%</td></tr>"
+        for key, r in settle.get("grid", {}).items()
+    )
+    stress = ""
+    if sel:
+        stress = (
+            f'<p class="memo">Same trades, harsher assumptions: fees × 1.5 '
+            f"<b>{html.escape(_band(sel['oos_fee_stress']))}¢</b>; filled two minutes later "
+            f"<b>{html.escape(_band(sel['oos_delay_stress']))}¢</b>; filled at the signal "
+            f"minute's own quote (optimistic) "
+            f"<b>{html.escape(_band(sel['oos_same_minute_fill']))}¢</b>.</p>"
+        )
+    gates = dec.get("gates") or {}
+    gate_items = "".join(
+        f'<li><span class="{"pos" if ok else "neg"}">{"pass" if ok else "fail"}</span> '
+        f"{html.escape(SETTLE_GATE_LABELS.get(name, name))}</li>"
+        for name, ok in gates.items()
+    )
+    picked = (
+        '<p class="memo" style="font-size:13.5px;color:var(--ink-2)">Picked on the '
+        f"in-sample markets: {html.escape(spec)} (t {_fmt(sel['in_sample'].get('t'), 2)} on "
+        f"{_fmt(sel['in_sample'].get('n'), 0)} trades). Out-of-sample gates, all needed for "
+        "paper trading:</p>"
+        if sel
+        else ""
+    )
+    ins, oos = d.get("in_sample", {}), d.get("out_of_sample", {})
+    return f"""
+<section id="settlement">
+  <h2>Held to settlement: {html.escape(_settle_months(settle))} 15-minute markets</h2>
+  <p class="memo">{html.escape(settlement_lede(settle))}</p>
+  <p class="memo" style="color:var(--ink-2);font-size:14px">{_fmt(d.get("markets_usable"), 0)} settled
+  <code>KXBTC15M</code> markets with Kalshi's 1-minute YES bid/ask, Coinbase 1-minute prices and
+  hourly Deribit DVOL. In each market the strategy buys the side an options-style model favours at
+  the first minute its edge after the taker fee clears a threshold, fills at the next minute's
+  quote and holds to settlement. Tuned on {_fmt(ins.get("markets"), 0)} markets to
+  {html.escape(str(ins.get("last_close", ""))[:10])}; judged on the next {_fmt(oos.get("markets"), 0)}
+  by a rule fixed before the first run.</p>
+  {tiles}
+  <div class="panels">
+    <div class="panel"><h3>Out-of-sample P&amp;L by threshold</h3>
+      <span class="sub">¢ per contract after fees, ± 2 SE clustered by day; thresholds with
+      at least {int(settle.get("config", {}).get("min_trades", 200)) // 4} trades</span>
+      <div class="legend"><span class="key"><i style="background:var(--s1)"></i>Deribit DVOL</span>
+      <span class="key"><i style="background:var(--s2)"></i>60-minute realised vol</span></div>
+      {_threshold_svg(settle, "Out-of-sample P&L by threshold")}</div>
+    <div class="panel"><h3>Is Kalshi's price a fair probability?</h3>
+      <span class="sub">how often YES settled, by Kalshi mid; on the dashed line = calibrated</span>
+      {_calibration_svg(five.get("calibration") or [], "Kalshi calibration 5 minutes before close")}</div>
+  </div>
+  {stress}
+  <details><summary>Every specification, in and out of sample</summary>
+    <div class="tablebox"><table>
+      <thead><tr><th>Volatility</th><th>Edge ≥ (¢)</th><th>In-sample trades</th><th>In-sample ¢</th>
+      <th>Out-of-sample trades</th><th>Out-of-sample ¢</th><th>Win rate</th></tr></thead>
+      <tbody>{rows}</tbody></table></div></details>
+  {picked}
+  <ul class="plain memo" style="font-size:13.5px;color:var(--ink-2)">{gate_items}</ul>
+</section>"""
+
+
+def render_fragment(
+    result: Mapping[str, Any],
+    live: Mapping[str, Any] | None = None,
+    settle: Mapping[str, Any] | None = None,
+) -> str:
     man = result.get("manifest", {})
     plan = result.get("plan", {})
     bases = result.get("base_cases", [])
@@ -928,6 +1271,8 @@ def render_fragment(result: Mapping[str, Any], live: Mapping[str, Any] | None = 
             "taker clears the 0.07·p(1−p) taker fee reliably only once makers take about "
             f"{need} or longer to re-quote after a BTC move."
         )
+    if settle:
+        lede = f"{lede} {settlement_lede(settle)}"
     verdicts = [
         live_verdict(live)
         if live
@@ -937,6 +1282,8 @@ def render_fragment(result: Mapping[str, Any], live: Mapping[str, Any] | None = 
             "no venue data reachable from this environment; collection plan below",
         ),
     ]
+    if settle:
+        verdicts.append(settlement_verdict(settle))
     for b in bases:
         label = (
             "Synthetic base case, Kalshi fees"
@@ -1148,6 +1495,7 @@ def render_fragment(result: Mapping[str, Any], live: Mapping[str, Any] | None = 
   {tiles}
 </section>
 {_live_section(live) if live else ""}
+{_settlement_section(settle) if settle else ""}
 {_frontier_section(frontier)}
 {_attribution_section(result, crit)}
 {base_html}
@@ -1183,9 +1531,10 @@ def write_html(
     *,
     fragment: bool = False,
     live: Mapping[str, Any] | None = None,
+    settle: Mapping[str, Any] | None = None,
 ) -> Path:
     out_dir.mkdir(parents=True, exist_ok=True)
-    body = render_fragment(result, live)
+    body = render_fragment(result, live, settle)
     if fragment:
         path = out_dir / "edge_evaluation.fragment.html"
         path.write_text(body, encoding="utf-8")

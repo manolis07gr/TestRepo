@@ -9,6 +9,7 @@ import logging
 import math
 from decimal import Decimal
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -290,6 +291,48 @@ def test_cli_report_accepts_a_live_summary(
     out = tmp_path / "out"
     assert main(["report", "--evaluation", str(ev), "--out", str(out), "--live", str(lv)]) == 0
     assert json.loads((out / "decision.json").read_text())["real_market_decision"] == "REJECT"
+    assert "reports" in capsys.readouterr().out
+
+
+def _settle_summary(kalshi_vol: float, dvol_pct: float) -> dict[str, Any]:
+    from cma.research import settlement_study as ss
+    from tests.factories import settlement_world
+
+    markets, candles, cb, dv = settlement_world(
+        600, true_vol=0.5, kalshi_vol=kalshi_vol, dvol_pct=dvol_pct
+    )
+    return ss.analyze(markets, candles, cb, dv)
+
+
+def test_report_with_settlement_summary_adds_the_history_call(tmp_path: Path) -> None:
+    result = _minimal_result()
+    wrong_model = _settle_summary(0.5, 90.0)
+    assert decision_summary(result, None, wrong_model)["settlement_decision"] == "REJECT"
+    text = render_markdown(result, None, wrong_model)
+    assert "Hold-to-settlement check on history" in text
+    assert "held to settlement (Kalshi 15-minute BTC markets): `REJECT`" in text
+    assert "Hold-to-settlement on the options-style model is rejected" in text
+    page = write_reports(result, tmp_path, settle=wrong_model)[2].read_text()
+    assert 'id="settlement"' in page
+    assert "Holding to settlement doesn" in page
+    assert "Is Kalshi" in page and "Out-of-sample P&amp;L by threshold" in page
+    mispriced = _settle_summary(1.2, 50.0)
+    dec = decision_summary(result, None, mispriced)["settlement_decision"]
+    assert dec in {"FORWARD_PAPER_CANDIDATE", "COLLECT_MORE_DATA"}
+    page = write_reports(result, tmp_path, settle=mispriced)[2].read_text()
+    assert ("One thing does pass" in page) or ("not yet distinguishable" in page)
+
+
+def test_cli_report_accepts_a_settlement_summary(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    ev, st = tmp_path / "evaluation.json", tmp_path / "settlement.json"
+    ev.write_text(json.dumps(_minimal_result()))
+    st.write_text(json.dumps(_settle_summary(0.5, 90.0), default=str))
+    out = tmp_path / "out"
+    args = ["report", "--evaluation", str(ev), "--out", str(out), "--settlement", str(st)]
+    assert main(args) == 0
+    assert json.loads((out / "decision.json").read_text())["settlement_decision"] == "REJECT"
     assert "reports" in capsys.readouterr().out
 
 
