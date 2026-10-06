@@ -38,9 +38,7 @@ pytestmark = pytest.mark.unit
 
 
 def test_hurdle_required_move_closed_form_and_monotonicity() -> None:
-    row = hurdle_row(
-        fee=KALSHI_STANDARD, t_seconds=3600, moneyness_z=0.0, sigma=0.45, window_s=1.0
-    )
+    row = hurdle_row(fee=KALSHI_STANDARD, t_seconds=3600, moneyness_z=0.0, sigma=0.45, window_s=1.0)
     # fair after the required move equals ask + fee + threshold
     from cma.research.hurdle import SECONDS_PER_YEAR
 
@@ -102,7 +100,9 @@ def test_fair_value_semantics_point_and_trailing_average() -> None:
 def test_normalizer_flags_drift_dedups_and_stamps() -> None:
     clock = ManualClock(5_000_000_000)
     norm = Normalizer(DataQualityConfig(max_clock_drift_ms=50), clock)
-    ahead = trade("KALSHI:X", 2_000_000_000, "0.5", "1", Side.BUY, tid="a", delay_ns=-100 * NS_PER_MS)
+    ahead = trade(
+        "KALSHI:X", 2_000_000_000, "0.5", "1", Side.BUY, tid="a", delay_ns=-100 * NS_PER_MS
+    )
     out = norm.process(ahead)
     assert out is not None and QualityFlag.CLOCK_DRIFT in out.quality_flags
     assert out.process_ts_ns == 5_000_000_000 and out.source_ts_ns == ahead.source_ts_ns
@@ -162,8 +162,14 @@ def test_report_rendering_from_minimal_result(tmp_path: Path) -> None:
         "real_market_decision": "COLLECT_MORE_DATA",
         "base_cases": [],
         "frontier": [
-            {"mm_lag_ms": 350.0, "competitor_ms": None, "latency_ms": 0, "model": "implied_vol",
-             "expected_c_per_contract": -0.2, "contracts": 10.0}
+            {
+                "mm_lag_ms": 350.0,
+                "competitor_ms": None,
+                "latency_ms": 0,
+                "model": "implied_vol",
+                "expected_c_per_contract": -0.2,
+                "contracts": 10.0,
+            }
         ],
         "lead_lag": {"results": []},
         "structural": {"family_samples": 0, "violations_after_costs": 0, "net_total": "0"},

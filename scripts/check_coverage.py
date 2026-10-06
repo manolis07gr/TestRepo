@@ -41,7 +41,7 @@ def _pct(files: dict[str, dict[str, dict[str, int]]], prefix: str = "") -> float
 
 def main(path: str = "coverage.json") -> int:
     files = json.loads(Path(path).read_text())["files"]
-    files = {k[k.index("src/"):] if "src/" in k else k: v for k, v in files.items()}
+    files = {k[k.index("src/") :] if "src/" in k else k: v for k, v in files.items()}
     ok = True
     for prefix, minimum in STRICT.items():
         pct = _pct(files, prefix)
@@ -50,8 +50,10 @@ def main(path: str = "coverage.json") -> int:
         print(f"{flag} {prefix:<32} {pct:6.2f}% (min {minimum}%)")
     overall = _pct(files)
     ok &= overall >= OVERALL_MIN
-    print(f"{'OK ' if overall >= OVERALL_MIN else 'LOW'} overall core src {overall:6.2f}% "
-          f"(min {OVERALL_MIN}%)")
+    print(
+        f"{'OK ' if overall >= OVERALL_MIN else 'LOW'} overall core src {overall:6.2f}% "
+        f"(min {OVERALL_MIN}%)"
+    )
     return 0 if ok else 1
 
 

@@ -9,7 +9,9 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 PATTERNS = {
-    "private key block": re.compile(r"-----BEGIN [A-Z ]*PRIVATE KEY-----\s*\n\s*[A-Za-z0-9+/=]{40,}"),
+    "private key block": re.compile(
+        r"-----BEGIN [A-Z ]*PRIVATE KEY-----\s*\n\s*[A-Za-z0-9+/=]{40,}"
+    ),
     "aws access key": re.compile(r"\bAKIA[0-9A-Z]{16}\b"),
     "github token": re.compile(r"\bgh[pousr]_[A-Za-z0-9]{30,}\b"),
     "slack token": re.compile(r"\bxox[abprs]-[A-Za-z0-9-]{10,}\b"),

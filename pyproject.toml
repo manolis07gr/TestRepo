@@ -70,7 +70,8 @@ ignore = [
 ]
 
 [tool.ruff.lint.per-file-ignores]
-"tests/**" = ["PLR2004", "S101", "N802", "PLC2701", "DTZ001", "N806", "N999", "PT018", "PLR0917"]
+"tests/**" = ["PLR2004", "S101", "N802", "PLC2701", "DTZ001", "N806", "N999", "PT018", "PLR0917", "PT011", "C408"]
+"src/cma/research/report_html.py" = ["E501"]
 "scripts/**" = ["DTZ005", "N802", "PLR0917"]
 
 [tool.mypy]

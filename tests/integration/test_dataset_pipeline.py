@@ -32,8 +32,14 @@ def test_raw_capture_normalizes_through_the_live_adapters(tmp_path: Path) -> Non
     ]
     for i, (venue, stream, payload) in enumerate(payloads):
         rec.append(
-            RawMessage(venue=venue, stream=stream, recv_ts_ns=t + i, payload=payload,
-                       connection_id=f"c-{venue.value}", connection_seq=i)
+            RawMessage(
+                venue=venue,
+                stream=stream,
+                recv_ts_ns=t + i,
+                payload=payload,
+                connection_id=f"c-{venue.value}",
+                connection_seq=i,
+            )
         )
     rec.close()
     errors: list[Exception] = []

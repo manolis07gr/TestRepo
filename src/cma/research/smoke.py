@@ -159,7 +159,9 @@ def run_smoke() -> dict[str, Any]:
             [_kalshi_snapshot(), _kalshi_delta(2, "5.00"), _kalshi_delta(3, "-5.00")],
         ),
     ):
-        transport = ScriptedTransport([script], on_exhausted="block", clock=clock, step_ns=1_000_000)
+        transport = ScriptedTransport(
+            [script], on_exhausted="block", clock=clock, step_ns=1_000_000
+        )
         feeds.append(
             FeedSession(
                 name=name,
