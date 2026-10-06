@@ -1,0 +1,10 @@
+# Forward paper trading overlay. Live execution stays disabled (v1 hard gate).
+mode: PAPER
+live_execution_enabled: false
+
+signal:
+  require_reviewed_mapping: true   # forward paper additionally requires APPROVED_PAPER
+
+simulation:
+  latency_ms: [250]                # paper executor applies one realistic latency
+  include_zero_latency_diagnostic: false

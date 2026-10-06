@@ -1,0 +1,86 @@
+# Base research configuration (scope s.27). Values are research defaults, not
+# investment recommendations; every limit is configurable and covered by tests.
+mode: PAPER
+live_execution_enabled: false
+
+data_quality:
+  max_clock_drift_ms: 50
+  fail_on_sequence_gap: true
+  max_reference_age_ms: 1000
+  max_prediction_feed_age_ms: 5000
+  max_forward_fill_ms: 2000
+
+simulation:
+  latency_ms: [100, 250, 500, 1000, 2000, 5000]
+  include_zero_latency_diagnostic: true
+  compute_latency_ms: 5
+  ack_latency_ms: 50
+  queue_model: conservative
+  allow_partial_fills: true
+  fill_on_cross: true
+  seed: 7
+
+signal:
+  min_net_edge_bps: 100          # 100 bps of $1 face = 1 cent per contract, after costs
+  require_reviewed_mapping: true
+  ttl_ms: 1000
+  adverse_selection_buffer_bps: 0
+  uncertainty_buffer_bps: 0
+  default_order_qty: 10
+
+risk:
+  initial_nav: 10000
+  max_contract_nav_pct: 2
+  max_event_nav_pct: 5
+  max_total_open_nav_pct: 10
+  daily_loss_stop_pct: 2
+
+research:
+  final_test_locked: true
+  walk_forward: true
+  multiple_testing_log: true
+  final_test_fraction: 0.2
+  validation_fraction: 0.2
+  walk_forward_folds: 4
+  embargo_ms: 60000
+  fdr_alpha: 0.05
+  bootstrap_samples: 2000
+  min_forward_paper_days: 14
+
+storage:
+  raw_dir: data/raw
+  db_url: sqlite:///data/cma.sqlite
+  reports_dir: reports
+  quarantine_dir: data/quarantine
+  mappings_dir: config/mappings
+
+venues:
+  kalshi:
+    enabled: true
+    rest_url: https://api.elections.kalshi.com/trade-api/v2
+    ws_url: wss://api.elections.kalshi.com/trade-api/ws/v2
+    fee_schedule: kalshi-standard
+    series: [KXBTCD, KXBTC, KXETHD, KXETH]
+    rate_limit_per_s: 8
+    credential_env:
+      key_id: KALSHI_API_KEY_ID
+      private_key_path: KALSHI_PRIVATE_KEY_PATH
+  polymarket:
+    enabled: true
+    rest_url: https://clob.polymarket.com
+    ws_url: wss://ws-subscriptions-clob.polymarket.com/ws/market
+    fee_schedule: polymarket-no-fee
+    rate_limit_per_s: 5
+  coinbase:
+    enabled: true
+    rest_url: https://api.exchange.coinbase.com
+    ws_url: wss://ws-feed.exchange.coinbase.com
+    instruments: [BTC-USD, ETH-USD]
+  binance:
+    enabled: false
+    rest_url: https://api.binance.com
+    ws_url: wss://stream.binance.com:9443/stream
+    instruments: [BTCUSDT, ETHUSDT]
+  deribit:
+    enabled: false
+    rest_url: https://www.deribit.com/api/v2
