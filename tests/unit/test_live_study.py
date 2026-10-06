@@ -105,4 +105,10 @@ def test_analyze_finds_a_stale_quote_after_a_reference_jump() -> None:
     assert edges["1000"]["mean_c"] < 0  # after the re-quote the taker pays the new ask + fee
     # random-time baseline: mostly fairly priced (one grid point lands on the jump itself)
     assert result["baseline"]["mean_c"] < 0 and result["baseline"]["share_positive"] < 0.1
-    assert "Stale-quote lifetime" in render_markdown(result)
+    # market-anchored: Kalshi mid 50c before the move + model change (+8.2c) = 58.2c fair;
+    # buying the stale 51c ask with a 1.8c fee nets ~5.4c
+    anchored = row["anchored_edge_by_latency"]
+    assert anchored["0"]["mean_c"] == pytest.approx(50.0 + 8.2 - 51.0 - 1.8, abs=0.1)
+    assert anchored["1000"]["mean_c"] < 0
+    assert result["baseline_anchored"]["mean_c"] < 0  # no news: pay half-spread + fee
+    assert "Market-anchored executable edge" in render_markdown(result)

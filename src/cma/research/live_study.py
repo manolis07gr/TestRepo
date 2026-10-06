@@ -109,6 +109,10 @@ class Sample:
     lifetime_ms: float | None  # None: survived beyond max_lifetime_ms
     edge_c: dict[int, float | None] = field(default_factory=dict)  # latency -> net c/contract
     qty: dict[int, float | None] = field(default_factory=dict)
+    # market-anchored: Kalshi's own mid before the move + the model's predicted change.
+    # Removes level disagreement (tails, vol, basis) and keeps the delta a latency trader
+    # exploits; this is the primary latency measure.
+    anchored_edge_c: dict[int, float | None] = field(default_factory=dict)
 
 
 # ----------------------------------------------------------------------------- inputs
@@ -324,6 +328,21 @@ def executable_edge_c(
     return 100.0 * gross - _fee_c(c, price, qty), float(size)
 
 
+def _kalshi_mid(q: Quote, t_ns: int) -> float | None:
+    i = q.index_at(t_ns)
+    if i < 0 or not (math.isfinite(q.bid[i]) and math.isfinite(q.ask[i])):
+        return None
+    return float(q.bid[i] + q.ask[i]) / 2
+
+
+def _anchored_fair(
+    mid_anchor: float | None, fair_model_anchor: float, fair_model_now: float
+) -> float | None:
+    if mid_anchor is None:
+        return None
+    return min(1.0, max(0.0, mid_anchor + (fair_model_now - fair_model_anchor)))
+
+
 def run_event_study(
     moves: Sequence[tuple[int, int, float]],
     threshold_bps: float,
@@ -370,15 +389,26 @@ def run_event_study(
                 stale_price=float(stale),
                 lifetime_ms=stale_lifetime_ms(q, t0, direction, cfg.max_lifetime_ms),
             )
+            t_anchor = t0 - cfg.move_window_ms * NS_PER_MS
+            mid_anchor = _kalshi_mid(q, t_anchor)
+            fair_anchor = _fair(c, before, t_anchor, sigma)
             for lat in cfg.latencies_ms:
                 t = t0 + lat * NS_PER_MS
                 spot = _ref_at(ref_ts, ref_mid, t)
                 if spot is None:
-                    s.edge_c[lat], s.qty[lat] = None, None
+                    s.edge_c[lat], s.qty[lat], s.anchored_edge_c[lat] = None, None, None
                     continue
                 fair_t = _fair(c, spot, t, sigma)
                 s.edge_c[lat], s.qty[lat] = executable_edge_c(
                     c, q, t, direction=direction, fair=fair_t, qty=cfg.order_qty
+                )
+                anchored = _anchored_fair(mid_anchor, fair_anchor, fair_t)
+                s.anchored_edge_c[lat] = (
+                    None
+                    if anchored is None
+                    else executable_edge_c(
+                        c, q, t, direction=direction, fair=anchored, qty=cfg.order_qty
+                    )[0]
                 )
             samples.append(s)
     return samples
@@ -392,11 +422,16 @@ def baseline_edges(
     ref_mid: NDArray[np.float64],
     sigma_at: Callable[[int], float],
     cfg: StudyConfig,
-) -> list[float]:
-    """Best-side "edge" (c/contract) at regular times regardless of moves: model/basis noise."""
+) -> tuple[list[float], list[float]]:
+    """Best-side "edge" (c/contract) at regular times regardless of moves.
+
+    Returns (model-absolute, market-anchored). The first absorbs model/basis error; the
+    second is roughly minus (half the spread + fee), the cost of trading without news.
+    """
     if ref_ts.size == 0:
-        return []
+        return [], []
     out: list[float] = []
+    anchored_out: list[float] = []
     step = int(cfg.baseline_every_s * NS_PER_S)
     lo, hi = cfg.fair_band
     for t in range(int(ref_ts[0]) + step, int(ref_ts[-1]), step):
@@ -413,14 +448,26 @@ def baseline_edges(
             fair = _fair(c, spot, t, sigma)
             if not lo <= fair <= hi:
                 continue
-            best = None
-            for d in (1, -1):
-                e, _ = executable_edge_c(c, q, t, direction=d, fair=fair, qty=cfg.order_qty)
-                if e is not None and (best is None or e > best):
-                    best = e
-            if best is not None:
-                out.append(best)
-    return out
+            t_anchor = t - cfg.move_window_ms * NS_PER_MS
+            spot_anchor = _ref_at(ref_ts, ref_mid, t_anchor)
+            anchored = (
+                None
+                if spot_anchor is None
+                else _anchored_fair(
+                    _kalshi_mid(q, t_anchor), _fair(c, spot_anchor, t_anchor, sigma), fair
+                )
+            )
+            for target, value in ((out, fair), (anchored_out, anchored)):
+                if value is None:
+                    continue
+                best = None
+                for d in (1, -1):
+                    e, _ = executable_edge_c(c, q, t, direction=d, fair=value, qty=cfg.order_qty)
+                    if e is not None and (best is None or e > best):
+                        best = e
+                if best is not None:
+                    target.append(best)
+    return out, anchored_out
 
 
 # ----------------------------------------------------------------------------- summary
@@ -428,6 +475,15 @@ def baseline_edges(
 
 def _pct(values: Sequence[float], q: float) -> float | None:
     return float(np.percentile(values, q)) if values else None
+
+
+def _baseline_stats(values: Sequence[float]) -> dict[str, Any]:
+    return {
+        "n": len(values),
+        "share_positive": (sum(1 for e in values if e > 0) / len(values)) if values else None,
+        "mean_c": float(np.mean(values)) if values else None,
+        "p95_c": _pct(values, 95),
+    }
 
 
 def summarize_samples(samples: Sequence[Sample], cfg: StudyConfig) -> list[dict[str, Any]]:
@@ -438,16 +494,24 @@ def summarize_samples(samples: Sequence[Sample], cfg: StudyConfig) -> list[dict[
         grp = [s for s in samples if s.threshold_bps == thr and s.series == series]
         lives = [s.lifetime_ms for s in grp if s.lifetime_ms is not None]
         censored = sum(1 for s in grp if s.lifetime_ms is None)
-        by_lat: dict[str, Any] = {}
-        for lat in cfg.latencies_ms:
-            edges = [e for s in grp if (e := s.edge_c.get(lat)) is not None]
-            pos = [e for e in edges if e > 0]
-            by_lat[str(lat)] = {
-                "n": len(edges),
-                "share_positive": (len(pos) / len(edges)) if edges else None,
-                "mean_c": float(np.mean(edges)) if edges else None,
-                "mean_positive_c": float(np.mean(pos)) if pos else None,
-            }
+
+        def by_latency(
+            group: Sequence[Sample], get: Callable[[Sample, int], float | None]
+        ) -> dict[str, Any]:
+            table: dict[str, Any] = {}
+            for lat in cfg.latencies_ms:
+                edges = [e for s in group if (e := get(s, lat)) is not None]
+                pos = [e for e in edges if e > 0]
+                table[str(lat)] = {
+                    "n": len(edges),
+                    "share_positive": (len(pos) / len(edges)) if edges else None,
+                    "mean_c": float(np.mean(edges)) if edges else None,
+                    "mean_positive_c": float(np.mean(pos)) if pos else None,
+                }
+            return table
+
+        by_lat = by_latency(grp, lambda s, lat: s.edge_c.get(lat))
+        anchored_by_lat = by_latency(grp, lambda s, lat: s.anchored_edge_c.get(lat))
         rows.append(
             {
                 "threshold_bps": thr,
@@ -462,6 +526,7 @@ def summarize_samples(samples: Sequence[Sample], cfg: StudyConfig) -> list[dict[
                     "share_beyond_horizon": censored / len(grp) if grp else None,
                 },
                 "edge_by_latency": by_lat,
+                "anchored_edge_by_latency": anchored_by_lat,
             }
         )
     return rows
@@ -550,7 +615,7 @@ def analyze(
             sigma_at=sigma_at,
             cfg=cfg,
         )
-    base = baseline_edges(
+    base, base_anchored = baseline_edges(
         above, quotes=quotes, ref_ts=ref_ts, ref_mid=ref_mid, sigma_at=sigma_at, cfg=cfg
     )
     updates = {c.series: 0 for c in above}
@@ -578,16 +643,44 @@ def analyze(
         "config": asdict(cfg),
         "moves_by_threshold": moves_found,
         "summary": summarize_samples(samples, cfg),
-        "baseline": {
-            "n": len(base),
-            "share_positive": (sum(1 for e in base if e > 0) / len(base)) if base else None,
-            "mean_c": float(np.mean(base)) if base else None,
-            "p95_c": _pct(base, 95),
-        },
+        "baseline": _baseline_stats(base),
+        "baseline_anchored": _baseline_stats(base_anchored),
         "lead_lag": lead_lag_contracts(
             events, contracts=above, quotes=quotes, ref_ts=ref_ts, ref_mid=ref_mid, cfg=cfg
         ),
     }
+
+
+def _f(v: Any, nd: int = 0) -> str:
+    return "n/a" if v is None else f"{v:.{nd}f}"
+
+
+def _edge_table(result: Mapping[str, Any], key: str, lat: Sequence[str]) -> list[str]:
+    rows = [
+        "| move ≥ bps | series | samples | lifetime p25 / median / p75 ms | beyond 30 s | "
+        + " | ".join(f"{x} ms: share>0 / mean ¢" for x in lat)
+        + " |",
+        "|" + "---|" * (5 + len(lat)),
+    ]
+    for r in result.get("summary", []):
+        lt = r["lifetime_ms"]
+        cells = []
+        for x in lat:
+            e = r.get(key, {}).get(x, {})
+            cells.append(f"{_f(e.get('share_positive'), 2)} / {_f(e.get('mean_c'), 2)}")
+        rows.append(
+            f"| {r['threshold_bps']:g} | {r['series']} | {r['samples']} | "
+            f"{_f(lt['p25'])} / {_f(lt['median'])} / {_f(lt['p75'])} | "
+            f"{_f(lt['share_beyond_horizon'], 2)} | " + " | ".join(cells) + " |"
+        )
+    return rows
+
+
+def _baseline_line(name: str, b: Mapping[str, Any]) -> str:
+    return (
+        f"{name}: n={b.get('n')}, share with positive edge {_f(b.get('share_positive'), 2)}, "
+        f"mean {_f(b.get('mean_c'), 2)} ¢, p95 {_f(b.get('p95_c'), 2)} ¢."
+    )
 
 
 def render_markdown(result: Mapping[str, Any]) -> str:
@@ -595,58 +688,47 @@ def render_markdown(result: Mapping[str, Any]) -> str:
     win = result.get("window", {})
     ref = result.get("reference", {})
     vol = ref.get("dvol_mean") or ref.get("realized_vol") or float("nan")
+    lat = [str(x) for x in result.get("config", {}).get("latencies_ms", [])]
     w.append("# Live staleness study: Kalshi BTC vs Coinbase")
     w.append("")
     w.append(
         f"Window {win.get('start')} to {win.get('end')} ({win.get('hours', 0):.2f} h). "
-        f"Reference updates: {result.get('reference', {}).get('updates')}; "
-        f"vol {vol:.3f}."
+        f"Reference updates: {ref.get('updates')}; vol {vol:.3f}."
     )
     w.append(
         f"Quote updates by series: {result.get('contracts', {}).get('quote_updates_by_series')}"
     )
     w.append(f"Moves found by threshold (bps in 1 s): {result.get('moves_by_threshold')}")
     w.append("")
-    w.append("## Stale-quote lifetime and executable edge after fees")
-    w.append("")
-    lat = [str(x) for x in result.get("config", {}).get("latencies_ms", [])]
-    w.append(
-        "| move ≥ bps | series | samples | lifetime p25 / median / p75 ms | beyond 30 s | "
-        + " | ".join(f"{x} ms: +share / mean ¢" for x in lat)
-        + " |"
-    )
-    w.append("|" + "---|" * (5 + len(lat)))
-    for r in result.get("summary", []):
-        lt = r["lifetime_ms"]
-
-        def f(v: Any, nd: int = 0) -> str:
-            return "n/a" if v is None else f"{v:.{nd}f}"
-
-        cells = []
-        for x in lat:
-            e = r["edge_by_latency"].get(x, {})
-            cells.append(f"{f(e.get('share_positive'), 2)} / {f(e.get('mean_c'), 2)}")
-        w.append(
-            f"| {r['threshold_bps']:g} | {r['series']} | {r['samples']} | "
-            f"{f(lt['p25'])} / {f(lt['median'])} / {f(lt['p75'])} | "
-            f"{f(lt['share_beyond_horizon'], 2)} | " + " | ".join(cells) + " |"
-        )
-    b = result.get("baseline", {})
+    w.append("## Market-anchored executable edge after fees (primary latency measure)")
     w.append("")
     w.append(
-        f"Baseline (no move, every 10 s, best side): n={b.get('n')}, share positive "
-        f"{b.get('share_positive')}, mean {b.get('mean_c')} ¢, p95 {b.get('p95_c')} ¢."
+        "Fair value = Kalshi's own mid 1 s before the move + the model's predicted change from "
+        "the BTC move; edge = fair - price - taker fee, for the book observed L ms after the "
+        "move. Lifetime = how long the quote a taker would hit survived."
     )
+    w.append("")
+    w += _edge_table(result, "anchored_edge_by_latency", lat)
+    w.append("")
+    w.append(_baseline_line("No-move baseline (anchored)", result.get("baseline_anchored", {})))
+    w.append("")
+    w.append("## Model-absolute edge (secondary: includes level disagreement)")
+    w.append("")
+    w += _edge_table(result, "edge_by_latency", lat)
+    w.append("")
+    w.append(_baseline_line("No-move baseline (model-absolute)", result.get("baseline", {})))
     w.append("")
     w.append("## Lead-lag (reference mid -> contract mid)")
     w.append("")
     for r in result.get("lead_lag", []):
-        o = r["result"].get("overall", r["result"])
+        o = r["result"]
         w.append(
-            f"* {r['contract']} ({r['updates']} updates): lag {o.get('best_positive_lag_ms')} ms, "
-            f"p {o.get('p_value')}, ΔOOS R² {o.get('incremental_oos_r2')}, qualifies "
-            f"{o.get('qualifies')}"
+            f"* {r['contract']} ({r['updates']} updates): lag {o.get('best_positive_lag_ms')} ms "
+            f"(HY {o.get('hy_best_lag_ms')} ms), p {_f(o.get('p_value'), 3)}, ΔOOS R² "
+            f"{_f(o.get('incremental_oos_r2'), 3)}, qualifies {o.get('qualifies')}"
         )
+    if not result.get("lead_lag"):
+        w.append("* not enough contract updates for lead-lag discovery")
     w.append("")
     return "\n".join(w) + "\n"
 
