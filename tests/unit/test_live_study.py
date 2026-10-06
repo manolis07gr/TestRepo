@@ -255,4 +255,68 @@ def test_stream_quotes_survives_transient_crosses_and_reconnects(tmp_path: Path)
         (600, 0.58, 0.59),
     ]
     k = stats["KALSHI"]
-    assert (k["crossed"], k["resets"], k["books"], k["books_invalid_at_end"]) == (1, 1, 1, 0)
+    # a reconnect is a new (connection, sid) subscription with its own sequence
+    assert (k["crossed"], k["books"], k["books_invalid_at_end"]) == (1, 1, 0)
+    assert (k["subscriptions"], k["subscription_gaps"]) == (2, 0)
+
+
+def _ws(kind: str, sid: int, seq: int, market: str, **msg: object) -> str:
+    return json.dumps(
+        {"type": kind, "sid": sid, "seq": seq, "msg": {"market_ticker": market, **msg}}
+    )
+
+
+def test_stream_quotes_checks_kalshi_sequence_per_subscription(tmp_path: Path) -> None:
+    """Kalshi folds every market of a channel into one subscription: ``seq`` is shared, so
+    one market's sequence numbers are never contiguous. Continuity is per subscription;
+    a real gap there invalidates every book it carries until each book's next snapshot."""
+    a, b = "KXBTCD-TEST-T100000", "KXBTCD-TEST-T101000"
+    book = {"yes_dollars_fp": [["0.4900", "10.00"]], "no_dollars_fp": [["0.4900", "10.00"]]}
+    rows = [
+        (0, _ws("orderbook_snapshot", 1, 1, a, **book)),
+        (1, _ws("orderbook_snapshot", 1, 2, b, **book)),
+        (5, _ws("orderbook_delta", 1, 3, a, price_dollars="0.5000", delta_fp="4.00", side="yes")),
+        (6, _ws("orderbook_delta", 1, 4, b, price_dollars="0.5000", delta_fp="4.00", side="yes")),
+        (7, _ws("orderbook_delta", 1, 5, a, price_dollars="0.4800", delta_fp="1.00", side="no")),
+        (7, _ws("orderbook_delta", 1, 5, a, price_dollars="0.4800", delta_fp="1.00", side="no")),
+        # a market we do not analyse shares the subscription: its seq still counts
+        (
+            8,
+            _ws(
+                "orderbook_delta", 1, 6, "OTHER", price_dollars="0.1000", delta_fp="1.00", side="no"
+            ),
+        ),
+        # seq 7 never arrives: both books may be wrong from here on
+        (9, _ws("orderbook_delta", 1, 8, b, price_dollars="0.4700", delta_fp="1.00", side="no")),
+        (10, _ws("orderbook_delta", 1, 9, a, price_dollars="0.4600", delta_fp="1.00", side="no")),
+        (12, _ws("orderbook_snapshot", 1, 10, a, yes_dollars_fp=[["0.5200", "3.00"]])),
+    ]
+    with RawRecorder(tmp_path) as rec:
+        for i, (ms, payload) in enumerate(rows):
+            rec.append(
+                RawMessage(
+                    venue=Venue.KALSHI,
+                    stream="ws",
+                    recv_ts_ns=T + ms * NS_PER_MS,
+                    payload=payload,
+                    connection_id="k1",
+                    connection_seq=i,
+                )
+            )
+    stats: dict[str, dict[str, int]] = {}
+    ka, kb = f"KALSHI:{a}", f"KALSHI:{b}"
+    quotes, _ = stream_quotes(tmp_path, [ka, kb], stats=stats)
+
+    def tops(inst: str) -> list[tuple[int, float, float | None]]:
+        q = quotes[inst]
+        return [
+            (int((t - T) // NS_PER_MS), float(x), None if np.isnan(y) else float(y))
+            for t, x, y in zip(q.ts, q.bid, q.ask, strict=True)
+        ]
+
+    # interleaved deltas apply although each market's own seq jumps (1 -> 3 -> 5)
+    assert tops(ka) == [(0, 0.49, 0.51), (5, 0.50, 0.51), (12, 0.52, None)]
+    assert tops(kb) == [(1, 0.49, 0.51), (6, 0.50, 0.51)]  # stale after the gap: dropped
+    k = stats["KALSHI"]
+    assert (k["subscriptions"], k["subscription_gaps"]) == (1, 1)
+    assert k["books_invalid_at_end"] == 1  # b never got a new snapshot

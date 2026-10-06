@@ -23,8 +23,10 @@ for or against stale quotes, not a backtest and not a promotion decision.
 from __future__ import annotations
 
 import bisect
+import dataclasses
 import json
 import math
+import re
 import urllib.request
 from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import asdict, dataclass, field
@@ -759,6 +761,7 @@ def analyze(
     return analyze_quotes(quotes, contracts, cfg=cfg, dvol=dvol)
 
 
+_SID_RE = re.compile(r'"sid"\s*:\s*(\d+)')
 _BOOK_COUNTERS = (
     "snapshots",
     "deltas_applied",
@@ -784,18 +787,24 @@ def stream_quotes(
 
     Replay book rules:
 
-    * a snapshot whose sequence restarted (Kalshi re-subscription after a reconnect starts
-      again at 1) replaces the book; a running builder would discard it as stale;
+    * Kalshi numbers ``seq`` per *subscription* (``sid``), and its server folds every
+      market of a channel into one subscription, so one market's sequence numbers are
+      never contiguous. Continuity is checked per (connection, sid) instead; deltas then
+      apply to their market without a per-market sequence check. A gap in a
+      subscription invalidates every book it carries until that book's next snapshot.
+    * a snapshot whose sequence restarted (other venues) replaces the book; a running
+      builder would discard it as stale;
     * a crossed book is skipped, not fatal. The deltas of one match arrive one message at a
       time, so a book can be crossed for a message or two; only uncrossed states are kept;
     * sequence gaps and negative sizes still invalidate a book until its next snapshot.
 
     ``stats`` receives, per venue, the summed book counters plus ``resets`` (sequence
-    restarts), ``books`` and ``books_invalid_at_end``.
+    restarts), ``books``, ``books_invalid_at_end`` and, for Kalshi, ``subscription_gaps``.
     """
     from array import array
 
     from cma.adapters.base import MalformedPayloadError
+    from cma.domain.enums import QualityFlag
     from cma.ingestion.book import BookState
     from cma.storage.normalize import default_adapters
     from cma.storage.raw import RawReader
@@ -803,10 +812,15 @@ def stream_quotes(
     table = default_adapters()
     wanted = set(instruments)
     totals: dict[str, dict[str, int]] = {}
+    keys = (*_BOOK_COUNTERS, "resets", "books", "books_invalid_at_end")
 
     def venue_totals(b: L2BookBuilder) -> dict[str, int]:
-        keys = (*_BOOK_COUNTERS, "resets", "books", "books_invalid_at_end")
         return totals.setdefault(b.venue.value, dict.fromkeys(keys, 0))
+
+    # Kalshi: sequence continuity per (connection, sid), see the docstring
+    sub_last: dict[tuple[str, int], int] = {}
+    sub_books: dict[tuple[str, int], set[str]] = {}
+    sub_gaps = 0
 
     def retire(b: L2BookBuilder) -> None:
         t = venue_totals(b)
@@ -826,9 +840,34 @@ def stream_quotes(
             events = adapter.parse(raw)
         except MalformedPayloadError:
             continue
+        sub: tuple[str, int] | None = None
+        if raw.venue is Venue.KALSHI and raw.stream == "ws":
+            m = _SID_RE.search(raw.payload)
+            if m is not None:
+                sub = (raw.connection_id, int(m.group(1)))
         for ev in events:
+            if not isinstance(ev, BookSnapshotEvent | BookDeltaEvent):
+                continue
             inst = ev.instrument_id
-            if inst not in wanted or not isinstance(ev, BookSnapshotEvent | BookDeltaEvent):
+            if sub is not None and ev.sequence is not None:
+                # every book message of the subscription counts, wanted or not
+                prev_seq = sub_last.get(sub)
+                if prev_seq is not None and ev.sequence <= prev_seq:
+                    continue  # duplicate or old message of this subscription
+                if (
+                    isinstance(ev, BookDeltaEvent)
+                    and prev_seq is not None
+                    and ev.sequence != prev_seq + 1
+                ):
+                    sub_gaps += 1  # a lost message: any book of this subscription may be off
+                    for other in sub_books.get(sub, ()):
+                        if (ob := builders.get(other)) is not None:
+                            ob.invalidate(QualityFlag.SEQUENCE_GAP, "subscription_gap")
+                sub_last[sub] = ev.sequence
+                sub_books.setdefault(sub, set()).add(inst)
+                if inst in wanted:
+                    ev = dataclasses.replace(ev, sequence=None)
+            if inst not in wanted:
                 continue
             b = builders.get(inst)
             restart = (
@@ -889,6 +928,10 @@ def stream_quotes(
             t = venue_totals(b)
             t["books"] += 1
             t["books_invalid_at_end"] += int(b.state is BookState.INVALID)
+        if sub_last:
+            kalshi = totals.setdefault(Venue.KALSHI.value, dict.fromkeys(keys, 0))
+            kalshi["subscription_gaps"] = sub_gaps
+            kalshi["subscriptions"] = len(sub_last)
         stats.update(totals)
     return quotes, n
 
