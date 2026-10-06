@@ -21,6 +21,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from cma.research.settlement_data import fetch_all
+from cma.research.settlement_study import analyze_dir, write_outputs
 
 
 def _ts(day: str) -> int:
@@ -46,6 +47,18 @@ def cmd_fetch(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_analyze(args: argparse.Namespace) -> int:
+    t0 = time.time()
+    result = analyze_dir(Path(args.data))
+    for path in write_outputs(result, Path(args.out)):
+        print(f"wrote {path}")
+    dec = result["decision"]
+    print(f"decision: {dec['decision']} ({time.time() - t0:.0f} s)")
+    for reason in dec["reasons"]:
+        print(f"  {reason}")
+    return 0
+
+
 def main() -> int:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
     logging.getLogger("httpx").setLevel(logging.WARNING)
@@ -59,6 +72,10 @@ def main() -> int:
     f.add_argument("--kalshi-rate", type=float, default=10.0, help="requests per second")
     f.add_argument("--unsigned", action="store_true", help="do not sign Kalshi requests")
     f.set_defaults(func=cmd_fetch)
+    a = sub.add_parser("analyze")
+    a.add_argument("--data", default="data/settlement")
+    a.add_argument("--out", default="reports/settlement_study")
+    a.set_defaults(func=cmd_analyze)
     args = p.parse_args()
     return int(args.func(args))
 

@@ -123,8 +123,8 @@ def _price(side: Mapping[str, Any] | None, key: str) -> float | None:
     v = side.get(f"{key}_dollars")
     if v is None:
         v = side.get(key)
-        if isinstance(v, int | float) and not isinstance(v, bool) and v > 1:
-            return float(v) / 100.0  # legacy integer cents
+        if isinstance(v, int) and not isinstance(v, bool):
+            return v / 100.0  # legacy integer cents
     return _float(v)
 
 
@@ -178,6 +178,21 @@ def _lines(path: Path) -> Iterator[dict[str, Any]]:
                 continue
 
 
+def _open_append(path: Path) -> Any:
+    """Append handle that starts on a fresh line: a run cut off mid-write leaves a partial
+    last line, which the loaders skip, but a record glued onto it would be lost too."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    needs_newline = False
+    if path.exists() and path.stat().st_size > 0:
+        with path.open("rb") as tail:
+            tail.seek(-1, 2)
+            needs_newline = tail.read(1) != b"\n"
+    fh = path.open("a", encoding="utf-8")
+    if needs_newline:
+        fh.write("\n")
+    return fh
+
+
 def load_markets(data_dir: Path, series: str) -> list[SettledMarket]:
     return [SettledMarket(**d) for d in _lines(markets_path(data_dir, series))]
 
@@ -204,13 +219,20 @@ def load_chunked_rows(path: Path) -> list[list[float]]:
 class _Http:
     """One rate-limited, retrying fetcher per host, plus optional Kalshi signing."""
 
-    def __init__(self, client: httpx.AsyncClient, *, rate_per_s: float, signer: Any = None):
+    def __init__(
+        self,
+        client: httpx.AsyncClient,
+        *,
+        rate_per_s: float,
+        signer: Any = None,
+        retry: RetryPolicy | None = None,
+    ) -> None:
         clock = SystemClock()
         self._fetcher = HttpFetcher(
             client,
             clock=clock,
             limiter=RateLimiter(rate_per_s, clock=clock, burst=max(1.0, rate_per_s)),
-            retry=RetryPolicy(max_attempts=8),
+            retry=retry or RetryPolicy(max_attempts=8),
         )
         self._signer = signer
 
@@ -319,7 +341,7 @@ async def fetch_candles(
                 fh.flush()
                 log.info("candles: %d / %d", written, len(todo))
 
-    with path.open("a", encoding="utf-8") as fh:
+    with _open_append(path) as fh:
         await asyncio.gather(*(one(m, fh) for m in todo))
     return written
 
@@ -352,8 +374,7 @@ async def _fetch_chunks(
         async with lock:
             fh.write(json.dumps({"start": start, "rows": rows}, separators=(",", ":")) + "\n")
 
-    path.parent.mkdir(parents=True, exist_ok=True)
-    with path.open("a", encoding="utf-8") as fh:
+    with _open_append(path) as fh:
         await asyncio.gather(*(one(s, fh) for s in todo))
     return len(todo)
 
@@ -421,12 +442,14 @@ async def fetch_all(
     data_dir: Path,
     kalshi_rate_per_s: float = 10.0,
     signed: bool = True,
+    transport: httpx.AsyncBaseTransport | None = None,
 ) -> dict[str, Any]:
     """Fetch (or complete) every input; returns counts for the log."""
     signer = kalshi_signer_from_env() if signed else None
     summary: dict[str, Any] = {"signed": signer is not None}
-    timeout = httpx.Timeout(30.0)
-    async with httpx.AsyncClient(timeout=timeout, headers={"User-Agent": "cma-research"}) as cl:
+    async with httpx.AsyncClient(
+        timeout=httpx.Timeout(30.0), headers={"User-Agent": "cma-research"}, transport=transport
+    ) as cl:
         kalshi = _Http(cl, rate_per_s=kalshi_rate_per_s, signer=signer)
         coinbase = _Http(cl, rate_per_s=4.0)
         deribit = _Http(cl, rate_per_s=4.0)
