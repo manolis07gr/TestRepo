@@ -3,12 +3,15 @@
 from __future__ import annotations
 
 import dataclasses
+import json
+from pathlib import Path
 
 import numpy as np
 import pytest
 
 from cma.domain.enums import Venue
 from cma.domain.fees import KALSHI_STANDARD
+from cma.domain.models import RawMessage
 from cma.domain.time import NS_PER_MS, NS_PER_S
 from cma.research.live_study import (
     AboveContract,
@@ -19,9 +22,12 @@ from cma.research.live_study import (
     detect_moves,
     executable_edge_c,
     live_decision,
+    reaction_ms,
     render_markdown,
     stale_lifetime_ms,
+    stream_quotes,
 )
+from cma.storage.raw import RawRecorder
 from tests.factories import contract, snapshot
 
 pytestmark = pytest.mark.unit
@@ -58,6 +64,18 @@ def test_stale_lifetime_up_and_down_moves() -> None:
     assert stale_lifetime_ms(q, t0, -1, 30_000) == pytest.approx(800.0)  # bid 0.49 -> 0.40
     assert stale_lifetime_ms(q, t0, +1, 500) is None  # survives a 500 ms horizon
     assert stale_lifetime_ms(q, T - NS_PER_S, +1, 30_000) is None  # no quote yet
+
+
+def test_reaction_times_the_repricing_not_the_first_requote() -> None:
+    # the ask ticks up 1c at 100 ms (noise re-quote), the book reprices at 700 ms
+    q = _quote([(0, 0.49, 0.51), (100, 0.49, 0.52), (700, 0.57, 0.59)])
+    t0 = T + 50 * NS_PER_MS
+    assert stale_lifetime_ms(q, t0, +1, 30_000) == pytest.approx(50.0)
+    kw = {"mid_anchor": 0.50, "horizon_ms": 30_000}
+    assert reaction_ms(q, t0, +1, target=0.04, **kw) == pytest.approx(650.0)
+    assert reaction_ms(q, t0, +1, target=0.20, **kw) is None  # never covers 20c
+    assert reaction_ms(q, T + 800 * NS_PER_MS, +1, target=0.04, **kw) == 0.0  # already moved
+    assert reaction_ms(q, t0, -1, target=0.04, **kw) is None  # wrong direction
 
 
 def test_executable_edge_uses_order_rounded_kalshi_fee() -> None:
@@ -102,6 +120,9 @@ def test_analyze_finds_a_stale_quote_after_a_reference_jump() -> None:
     rows = {r["threshold_bps"]: r for r in result["summary"]}
     row = rows[10.0]
     assert row["samples"] == 1 and row["lifetime_ms"]["median"] == pytest.approx(600.0)
+    # the book reprices (mid 50c -> 58c vs a predicted +8.2c) 600 ms after the jump
+    assert row["reaction_ms"]["median"] == pytest.approx(600.0)
+    assert row["reaction_ms"]["share_beyond_horizon"] == 0.0
     edges = row["edge_by_latency"]
     assert edges["0"]["mean_c"] > 3.0 and edges["500"]["share_positive"] == 1.0
     assert edges["1000"]["mean_c"] < 0  # after the re-quote the taker pays the new ask + fee
@@ -160,3 +181,78 @@ def test_live_decision_rule(
 def test_live_decision_without_reference_data() -> None:
     dec = live_decision({"error": "no reference (Coinbase BTC-USD) data"})
     assert dec["decision"] == "COLLECT_MORE_DATA" and "no reference" in dec["reasons"][0]
+
+
+def _kalshi_ws(kind: str, seq: int, **msg: object) -> str:
+    body = {"market_ticker": "KXBTCD-TEST-T100000", **msg}
+    return json.dumps({"type": kind, "sid": 7, "seq": seq, "msg": body})
+
+
+def test_stream_quotes_survives_transient_crosses_and_reconnects(tmp_path: Path) -> None:
+    """A momentary cross must not kill the book, and a reconnect snapshot (seq back to 1)
+    must replace it; both used to leave the book dead or frozen for the rest of the run."""
+    snap = {"yes_dollars_fp": [["0.4900", "100.00"]], "no_dollars_fp": [["0.4900", "100.00"]]}
+    rows = [  # (ms, connection, payload); canonical YES book starts at 0.49 / 0.51
+        (0, "k1", _kalshi_ws("orderbook_snapshot", 1, **snap)),
+        # a YES bid at 0.55 shows up before the NO bid it trades against is removed
+        (
+            10,
+            "k1",
+            _kalshi_ws("orderbook_delta", 2, price_dollars="0.5500", delta_fp="5.00", side="yes"),
+        ),
+        (
+            11,
+            "k1",
+            _kalshi_ws("orderbook_delta", 3, price_dollars="0.4900", delta_fp="-100.00", side="no"),
+        ),
+        (
+            20,
+            "k1",
+            _kalshi_ws("orderbook_delta", 4, price_dollars="0.4000", delta_fp="50.00", side="no"),
+        ),
+        # reconnect: fresh snapshot, sequence restarts at 1
+        (
+            500,
+            "k2",
+            _kalshi_ws(
+                "orderbook_snapshot",
+                1,
+                yes_dollars_fp=[["0.5700", "10.00"]],
+                no_dollars_fp=[["0.4100", "20.00"]],
+            ),
+        ),
+        (
+            600,
+            "k2",
+            _kalshi_ws("orderbook_delta", 2, price_dollars="0.5800", delta_fp="3.00", side="yes"),
+        ),
+    ]
+    with RawRecorder(tmp_path) as rec:
+        for i, (ms, conn, payload) in enumerate(rows):
+            rec.append(
+                RawMessage(
+                    venue=Venue.KALSHI,
+                    stream="ws",
+                    recv_ts_ns=T + ms * NS_PER_MS,
+                    payload=payload,
+                    connection_id=conn,
+                    connection_seq=i,
+                )
+            )
+    stats: dict[str, dict[str, int]] = {}
+    quotes, n = stream_quotes(tmp_path, [KX], stats=stats)
+    q = quotes[KX]
+    tops = [
+        (int((t - T) // NS_PER_MS), float(b), None if np.isnan(a) else float(a))
+        for t, b, a in zip(q.ts, q.bid, q.ask, strict=True)
+    ]
+    assert n == 6
+    assert tops == [
+        (0, 0.49, 0.51),
+        (11, 0.55, None),  # crossed at 10 ms: skipped, not fatal; the NO side is now empty
+        (20, 0.55, 0.60),
+        (500, 0.57, 0.59),  # reconnect snapshot (sequence back to 1) replaces the book
+        (600, 0.58, 0.59),
+    ]
+    k = stats["KALSHI"]
+    assert (k["crossed"], k["resets"], k["books"], k["books_invalid_at_end"]) == (1, 1, 1, 0)

@@ -83,16 +83,18 @@ def cmd_analyze(args: argparse.Namespace) -> int:
     above = above_contracts(contracts)
     wanted = {REFERENCE} | {c.instrument_id for c in above}
     started = time.monotonic()
-    quotes, n_raw = stream_quotes(Path(cfg.storage.raw_dir), wanted)
+    book_quality: dict[str, dict[str, int]] = {}
+    quotes, n_raw = stream_quotes(Path(cfg.storage.raw_dir), wanted, stats=book_quality)
     changes = sum(q.ts.size for q in quotes.values())
     print(
         f"contracts {len(contracts)} (above-strike {len(above)}), raw messages {n_raw}, "
         f"books {len(quotes)}, top-of-book changes {changes} "
-        f"in {time.monotonic() - started:.0f}s",
+        f"in {time.monotonic() - started:.0f}s; book replay {book_quality}",
         flush=True,
     )
     result = analyze_quotes(quotes, contracts, cfg=StudyConfig())
     result["raw_messages"] = n_raw
+    result["book_quality"] = book_quality
     paths = write_outputs(result, Path(args.out))
     print(json.dumps({"outputs": [str(p) for p in paths]}))
     print(paths[1].read_text())

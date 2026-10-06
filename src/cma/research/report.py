@@ -190,13 +190,23 @@ def live_markdown(live: Mapping[str, Any]) -> list[str]:
     out.append(
         "* Volatility input: "
         + (
-            f"Deribit DVOL, mean {_f(100 * dvol, 0)}% ({_n(ref.get('dvol_points'))} minutes)"
+            f"Deribit DVOL, mean {_f(100 * dvol, 0)}% ({_n(ref.get('dvol_points'))} one-minute "
+            "closes)"
             if dvol is not None
             else "realised volatility (DVOL unavailable)"
         )
         + f"; realised over the window {_f(100 * (ref.get('realized_vol') or math.nan), 0)}%."
     )
     out.append(f"* Coinbase moves of at least 3 / 5 / 10 bps within 1 s (5 s cooldown): {moves}.")
+    bq = (live.get("book_quality") or {}).get("KALSHI") or {}
+    if bq:
+        out.append(
+            f"* Kalshi book replay: {_n(bq.get('snapshots'))} snapshots ({_n(bq.get('resets'))} "
+            f"after reconnects), {_n(bq.get('deltas_applied'))} deltas, {_n(bq.get('crossed'))} "
+            f"momentarily crossed states skipped, {_n(bq.get('gaps'))} sequence gaps; "
+            f"{_n(bq.get('books_invalid_at_end'))} of {_n(bq.get('books'))} books invalid at "
+            "the end."
+        )
     out.append(
         "* Method: for every move and every contract whose fair value it shifts by at least 1¢ "
         "(fair 10–90¢, 90 s to 6 h before close), take the quote a taker would hit as observed "
@@ -207,14 +217,15 @@ def live_markdown(live: Mapping[str, Any]) -> list[str]:
     out.append("")
     rows = []
     for r in live.get("pooled", []):
-        lt = r["lifetime_ms"]
+        rt = r.get("reaction_ms") or {}
         rows.append(
             [
                 f"{r['threshold_bps']:g}",
                 _n(r["samples"]),
                 _n(r["moves"]),
-                f"{_f(lt.get('p25'), 0)} / {_f(lt.get('median'), 0)} / {_f(lt.get('p75'), 0)}",
-                _f(lt.get("share_beyond_horizon"), 2),
+                f"{_f(rt.get('p25'), 0)} / {_f(rt.get('median'), 0)} / {_f(rt.get('p75'), 0)}",
+                _f(rt.get("share_already_moved"), 2),
+                _f(r["lifetime_ms"].get("median"), 0),
                 *(edge_band(live_cell(r, x)) for x in lats),
             ]
         )
@@ -224,8 +235,9 @@ def live_markdown(live: Mapping[str, Any]) -> list[str]:
                 "move ≥ bps",
                 "samples",
                 "moves",
-                "stale quote life p25 / median / p75 ms",
-                "alive at 30 s",
+                "maker reaction p25 / median / p75 ms",
+                "repriced before seen",
+                "quote life median ms",
                 *(f"{x} ms" for x in lats),
             ],
             rows,
@@ -233,8 +245,10 @@ def live_markdown(live: Mapping[str, Any]) -> list[str]:
     )
     out.append("")
     out.append(
-        "Latency cells: mean net ¢ per contract after the fee ± 2 standard errors clustered by "
-        "move, all series pooled."
+        "Maker reaction: time from seeing the move until Kalshi's mid covered half the model's "
+        "predicted repricing (0 if it already had). Quote life: time until the quote a taker "
+        "would hit changed for any reason. Latency cells: mean net ¢ per contract after the "
+        "fee ± 2 standard errors clustered by move, all series pooled."
     )
     out.append("")
     b, babs = live.get("baseline_anchored", {}), live.get("baseline", {})

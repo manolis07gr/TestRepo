@@ -556,7 +556,7 @@ def live_lede(live: Mapping[str, Any]) -> str:
     if prim is None or m100 is None:
         reasons = (live.get("decision") or {}).get("reasons") or ["no samples"]
         return f"Not yet measurable on real Kalshi books ({reasons[0]})."
-    med = _num(prim["lifetime_ms"].get("median"))
+    med = _num((prim.get("reaction_ms") or {}).get("median"))
     opener = (
         "Not on real Kalshi books."
         if dec == "REJECT"
@@ -564,9 +564,9 @@ def live_lede(live: Mapping[str, Any]) -> str:
     )
     same = (m100 > 0) == ((m250 or 0) > 0)
     body = (
-        f" Over {hours:.1f} hours of live order books, the quote a taker would hit after a "
-        f"≥ 5 bps BTC move lasted a median {_fmt(med, 0)} ms, and taking it "
-        f"{_took(m100, 100, first=True)} {'and' if same else 'but'} "
+        f" Over {hours:.1f} hours of live order books, Kalshi makers repriced half of a "
+        f"≥ 5 bps BTC move within a median {_fmt(med, 0)} ms of our seeing it, and taking the "
+        f"stale quote {_took(m100, 100, first=True)} {'and' if same else 'but'} "
         f"{_took(m250, 250, first=False)} after the fee"
     )
     se = _num(c100.get("se_c"))
@@ -574,8 +574,8 @@ def live_lede(live: Mapping[str, Any]) -> str:
         return f"{opener}{body}."
     band = f" (±{2 * se:.2f}¢ at two standard errors)" if se is not None else ""
     return (
-        f"{opener}{body}{band}; one {hours:.0f}-hour window cannot settle it, so the call is to "
-        "collect more data."
+        f"{opener}{body}{band}; one {hours:.1f}-hour window cannot settle it, so the call is "
+        "to collect more data."
     )
 
 
@@ -603,10 +603,11 @@ def _live_section(live: Mapping[str, Any]) -> str:
     pooled = live.get("pooled", [])
     prim = live_primary(live)
     lt = (prim or {}).get("lifetime_ms", {})
+    rt = (prim or {}).get("reaction_ms") or {}
     c100, c250 = live_cell(prim, 100), live_cell(prim, 250)
     base = live.get("baseline_anchored", {})
     base_abs = live.get("baseline", {})
-    beyond = _num(lt.get("share_beyond_horizon"))
+    early = _num(rt.get("share_already_moved"))
 
     def tile_edge(cell: Mapping[str, Any], label: str) -> str:
         se = _num(cell.get("se_c"))
@@ -621,12 +622,12 @@ def _live_section(live: Mapping[str, Any]) -> str:
 
     tiles = (
         '<div class="tiles">'
-        '<div class="tile"><span class="label">Median life of a stale quote</span>'
-        f'<span class="value">{_fmt(lt.get("median"), 0)} ms</span>'
-        f'<span class="note">after ≥ 5 bps moves · p25–p75 {_fmt(lt.get("p25"), 0)}–'
-        f"{_fmt(lt.get('p75'), 0)} ms · "
-        f"{_fmt(100 * beyond if beyond is not None else None, 0)}% still there at 30 s</span>"
-        "</div>"
+        '<div class="tile"><span class="label">Median maker reaction</span>'
+        f'<span class="value">{_fmt(rt.get("median"), 0)} ms</span>'
+        '<span class="note">for Kalshi\'s mid to cover half the predicted repricing of a '
+        f"≥ 5 bps move · p25–p75 {_fmt(rt.get('p25'), 0)}–{_fmt(rt.get('p75'), 0)} ms · "
+        f"{_fmt(100 * early if early is not None else None, 0)}% repriced before we saw the "
+        f"move · quote life median {_fmt(lt.get('median'), 0)} ms</span></div>"
         + tile_edge(c100, "Taking it 100 ms after the move")
         + tile_edge(c250, "Taking it 250 ms after the move")
         + '<div class="tile"><span class="label">Trading without news</span>'
@@ -647,7 +648,7 @@ def _live_section(live: Mapping[str, Any]) -> str:
     panels = "".join(
         f'<div class="panel"><h3>Moves ≥ {r["threshold_bps"]:g} bps in 1 s</h3>'
         f'<div class="sub">{_fmt(r["samples"], 0)} quotes on {_fmt(r["moves"], 0)} moves · '
-        f"median life {_fmt(r['lifetime_ms'].get('median'), 0)} ms</div>"
+        f"median reaction {_fmt((r.get('reaction_ms') or {}).get('median'), 0)} ms</div>"
         f"{_live_panel_svg(r, lats, lo - pad, hi + pad, f'moves ≥ {r["threshold_bps"]:g} bps')}"
         "</div>"
         for r in pooled
@@ -655,11 +656,12 @@ def _live_section(live: Mapping[str, Any]) -> str:
     head = "".join(f"<th>{lat} ms</th>" for lat in lats)
 
     def edge_row(first: str, r: Mapping[str, Any]) -> str:
-        life = r["lifetime_ms"]
+        react = r.get("reaction_ms") or {}
         return (
             f"<tr><td>{first}</td><td>{_fmt(r['samples'], 0)}</td><td>{_fmt(r['moves'], 0)}</td>"
-            f"<td>{_fmt(life.get('p25'), 0)} / {_fmt(life.get('median'), 0)} / "
-            f"{_fmt(life.get('p75'), 0)}</td>"
+            f"<td>{_fmt(react.get('p25'), 0)} / {_fmt(react.get('median'), 0)} / "
+            f"{_fmt(react.get('p75'), 0)}</td>"
+            f"<td>{_fmt(r['lifetime_ms'].get('median'), 0)}</td>"
             + "".join(
                 f'<td class="{_cls(live_cell(r, lat).get("mean_c"))}">'
                 f"{html.escape(_band(live_cell(r, lat)))}</td>"
@@ -674,8 +676,9 @@ def _live_section(live: Mapping[str, Any]) -> str:
         for r in live.get("summary", [])
     )
     table_head = (
-        "<thead><tr><th>moves</th><th>quotes</th><th>moves</th>"
-        f"<th>life p25 / median / p75 ms</th>{head}</tr></thead>"
+        "<thead><tr><th>move size</th><th>quotes</th><th>moves</th>"
+        "<th>reaction p25 / median / p75 ms</th><th>quote life median ms</th>"
+        f"{head}</tr></thead>"
     )
     ll_rows = "".join(
         f"<tr><td>{html.escape(r['contract'].split(':')[-1])}</td>"
@@ -1020,12 +1023,12 @@ def render_fragment(result: Mapping[str, Any], live: Mapping[str, Any] | None = 
 </section>"""
 
     if live:
-        med = _num((live_primary(live) or {}).get("lifetime_ms", {}).get("median"))
+        med = _num(((live_primary(live) or {}).get("reaction_ms") or {}).get("median"))
         next_items = (
-            f"<li>Real makers left a stale quote up for a median {_fmt(med, 0)} ms after a "
-            f"≥ 5 bps move in this window. The model needs about {html.escape(need)} or longer "
-            "for edge with a 120 ms competitor present; a longer capture shows whether slower "
-            "periods (news, thin hours, expiry days) exist.</li>"
+            f"<li>Real makers repriced half of a ≥ 5 bps move within a median {_fmt(med, 0)} ms "
+            f"in this window. The model needs about {html.escape(need)} or longer for edge with "
+            "a 120 ms competitor present; a longer capture shows whether slower periods (news, "
+            "thin hours, expiry days) exist.</li>"
             "<li>Extend the capture to ≥ 14 days with <code>scripts/live_study.py collect</code> "
             "across volatility regimes, and add Polymarket and Binance / Deribit feeds. Promote "
             "only through the out-of-sample and promotion gates, never from one window.</li>"

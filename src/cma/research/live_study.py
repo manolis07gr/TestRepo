@@ -107,6 +107,11 @@ class Sample:
     fair_after: float
     stale_price: float  # the quote a taker would hit, as observed just before t0
     lifetime_ms: float | None  # None: survived beyond max_lifetime_ms
+    # ms until Kalshi's mid covered half the model's predicted repricing (0: already there
+    # when we saw the move); None with reaction_censored when not within max_lifetime_ms,
+    # None without it when there was no Kalshi mid to anchor on
+    reaction_ms: float | None = None
+    reaction_censored: bool = False
     edge_c: dict[int, float | None] = field(default_factory=dict)  # latency -> net c/contract
     qty: dict[int, float | None] = field(default_factory=dict)
     # market-anchored: Kalshi's own mid before the move + the model's predicted change.
@@ -304,6 +309,40 @@ def stale_lifetime_ms(q: Quote, t0_ns: int, direction: int, horizon_ms: int) -> 
     return None
 
 
+def reaction_ms(
+    q: Quote,
+    t0_ns: int,
+    direction: int,
+    *,
+    mid_anchor: float,
+    target: float,
+    horizon_ms: int,
+) -> float | None:
+    """Ms until the mid has moved ``target`` from ``mid_anchor`` in the move's direction.
+
+    Unlike the lifetime of one quote, which ends at the first re-quote for any reason,
+    this times the *repricing* itself (the maker reaction lag of the synthetic study).
+    0 when the mid had already moved that far when the move was seen; None if it does not
+    within ``horizon_ms``.
+    """
+    i0 = q.index_at(t0_ns)
+    if i0 < 0:
+        return None
+    end = t0_ns + horizon_ms * NS_PER_MS
+    for k in range(i0, q.ts.size):
+        t = int(q.ts[k])
+        if t > end:
+            break
+        b, a = q.bid[k], q.ask[k]
+        if (
+            math.isfinite(b)
+            and math.isfinite(a)
+            and ((b + a) / 2 - mid_anchor) * direction >= (target - 1e-9)
+        ):
+            return max(0.0, (t - t0_ns) / NS_PER_MS)
+    return None
+
+
 def executable_edge_c(
     c: AboveContract,
     q: Quote,
@@ -376,6 +415,21 @@ def run_event_study(
             stale = q.ask[i0] if direction > 0 else q.bid[i0]
             if not math.isfinite(stale):
                 continue
+            t_anchor = t0 - cfg.move_window_ms * NS_PER_MS
+            mid_anchor = _kalshi_mid(q, t_anchor)
+            fair_anchor = _fair(c, before, t_anchor, sigma)
+            react = (
+                None
+                if mid_anchor is None
+                else reaction_ms(
+                    q,
+                    t0,
+                    direction,
+                    mid_anchor=mid_anchor,
+                    target=0.5 * abs(f1 - f0),
+                    horizon_ms=cfg.max_lifetime_ms,
+                )
+            )
             s = Sample(
                 t0_ns=t0,
                 contract_id=c.contract_id,
@@ -388,10 +442,9 @@ def run_event_study(
                 fair_after=f1,
                 stale_price=float(stale),
                 lifetime_ms=stale_lifetime_ms(q, t0, direction, cfg.max_lifetime_ms),
+                reaction_ms=react,
+                reaction_censored=mid_anchor is not None and react is None,
             )
-            t_anchor = t0 - cfg.move_window_ms * NS_PER_MS
-            mid_anchor = _kalshi_mid(q, t_anchor)
-            fair_anchor = _fair(c, before, t_anchor, sigma)
             for lat in cfg.latencies_ms:
                 t = t0 + lat * NS_PER_MS
                 spot = _ref_at(ref_ts, ref_mid, t)
@@ -486,6 +539,19 @@ def _baseline_stats(values: Sequence[float]) -> dict[str, Any]:
     }
 
 
+def _median_censored(values: Sequence[float], n_total: int) -> float | None:
+    """Median when ``n_total - len(values)`` observations exceed the horizon (right-censored):
+    the median is known as long as fewer than half are censored, else None."""
+    if not n_total or 2 * len(values) < n_total:
+        return None
+    ordered = sorted(values)
+    k = (n_total - 1) / 2
+    lo, hi = ordered[math.floor(k)], ordered[min(math.ceil(k), len(ordered) - 1)]
+    if math.ceil(k) >= len(ordered):  # upper middle is censored
+        return lo
+    return (lo + hi) / 2
+
+
 def clustered_stats(pairs: Sequence[tuple[float, int]]) -> dict[str, Any]:
     """Mean, share > 0 and move-clustered standard error of ``(value, move id)`` pairs.
 
@@ -525,6 +591,8 @@ def _summary_row(
 ) -> dict[str, Any]:
     lives = [s.lifetime_ms for s in grp if s.lifetime_ms is not None]
     censored = sum(1 for s in grp if s.lifetime_ms is None)
+    reacts = [s.reaction_ms for s in grp if s.reaction_ms is not None]
+    react_n = len(reacts) + sum(1 for s in grp if s.reaction_censored)
 
     def by_latency(get: Callable[[Sample, int], float | None]) -> dict[str, Any]:
         return {
@@ -543,6 +611,16 @@ def _summary_row(
             "p75": _pct(lives, 75),
             "p90": _pct(lives, 90),
             "share_beyond_horizon": censored / len(grp) if grp else None,
+        },
+        "reaction_ms": {
+            "n": react_n,
+            "p25": _pct(reacts, 25),
+            "median": _median_censored(reacts, react_n),
+            "p75": _pct(reacts, 75),
+            "share_already_moved": (sum(1 for r in reacts if r == 0) / react_n)
+            if react_n
+            else None,
+            "share_beyond_horizon": (react_n - len(reacts)) / react_n if react_n else None,
         },
         "edge_by_latency": by_latency(lambda s, lat: s.edge_c.get(lat)),
         "anchored_edge_by_latency": by_latency(lambda s, lat: s.anchored_edge_c.get(lat)),
@@ -681,21 +759,60 @@ def analyze(
     return analyze_quotes(quotes, contracts, cfg=cfg, dvol=dvol)
 
 
-def stream_quotes(raw_root: Path, instruments: Iterable[str]) -> tuple[dict[str, Quote], int]:
+_BOOK_COUNTERS = (
+    "snapshots",
+    "deltas_applied",
+    "duplicates_ignored",
+    "gaps",
+    "crossed",
+    "negative_quantity",
+    "ignored_while_invalid",
+)
+
+
+def stream_quotes(
+    raw_root: Path,
+    instruments: Iterable[str],
+    *,
+    stats: dict[str, dict[str, int]] | None = None,
+) -> tuple[dict[str, Quote], int]:
     """Receive-time top of book per instrument straight from the raw store.
 
     One pass, constant memory per book: only *changes* of the top of book are kept, so a
     multi-hour capture with millions of deep-book deltas reduces to compact arrays.
     Returns (quotes, raw messages read).
+
+    Replay book rules:
+
+    * a snapshot whose sequence restarted (Kalshi re-subscription after a reconnect starts
+      again at 1) replaces the book; a running builder would discard it as stale;
+    * a crossed book is skipped, not fatal. The deltas of one match arrive one message at a
+      time, so a book can be crossed for a message or two; only uncrossed states are kept;
+    * sequence gaps and negative sizes still invalidate a book until its next snapshot.
+
+    ``stats`` receives, per venue, the summed book counters plus ``resets`` (sequence
+    restarts), ``books`` and ``books_invalid_at_end``.
     """
     from array import array
 
     from cma.adapters.base import MalformedPayloadError
+    from cma.ingestion.book import BookState
     from cma.storage.normalize import default_adapters
     from cma.storage.raw import RawReader
 
     table = default_adapters()
     wanted = set(instruments)
+    totals: dict[str, dict[str, int]] = {}
+
+    def venue_totals(b: L2BookBuilder) -> dict[str, int]:
+        keys = (*_BOOK_COUNTERS, "resets", "books", "books_invalid_at_end")
+        return totals.setdefault(b.venue.value, dict.fromkeys(keys, 0))
+
+    def retire(b: L2BookBuilder) -> None:
+        t = venue_totals(b)
+        for name in _BOOK_COUNTERS:
+            t[name] += int(getattr(b.counters, name))
+
     builders: dict[str, L2BookBuilder] = {}
     cols: dict[str, tuple[array[int], array[float], array[float], array[float], array[float]]] = {}
     last: dict[str, tuple[float, float, float, float]] = {}
@@ -714,9 +831,23 @@ def stream_quotes(raw_root: Path, instruments: Iterable[str]) -> tuple[dict[str,
             if inst not in wanted or not isinstance(ev, BookSnapshotEvent | BookDeltaEvent):
                 continue
             b = builders.get(inst)
-            if b is None:
+            restart = (
+                b is not None
+                and isinstance(ev, BookSnapshotEvent)
+                and b.state is BookState.VALID
+                and ev.sequence is not None
+                and b.last_sequence is not None
+                and ev.sequence <= b.last_sequence
+            )
+            if b is None or restart:
+                if b is not None:
+                    retire(b)
+                    venue_totals(b)["resets"] += 1
                 b = builders[inst] = L2BookBuilder(
-                    venue=ev.venue, instrument_id=inst, require_sequence=False
+                    venue=ev.venue,
+                    instrument_id=inst,
+                    require_sequence=False,
+                    crossed_policy="flag",
                 )
             b.apply(ev)
             if not b.is_valid:
@@ -752,6 +883,13 @@ def stream_quotes(raw_root: Path, instruments: Iterable[str]) -> tuple[dict[str,
         )
         for inst, c in cols.items()
     }
+    if stats is not None:
+        for b in builders.values():
+            retire(b)
+            t = venue_totals(b)
+            t["books"] += 1
+            t["books_invalid_at_end"] += int(b.state is BookState.INVALID)
+        stats.update(totals)
     return quotes, n
 
 
@@ -864,10 +1002,10 @@ def _edge_table(result: Mapping[str, Any], key: str, lat: Sequence[str]) -> list
 
 def _pooled_table(result: Mapping[str, Any], lat: Sequence[str]) -> list[str]:
     rows = [
-        "| move ≥ bps | samples | moves | lifetime median ms | "
+        "| move ≥ bps | samples | moves | reaction median ms | lifetime median ms | "
         + " | ".join(f"{x} ms: mean ± 2 SE ¢ (share>0)" for x in lat)
         + " |",
-        "|" + "---|" * (4 + len(lat)),
+        "|" + "---|" * (5 + len(lat)),
     ]
     for r in result.get("pooled", []):
         cells = []
@@ -877,6 +1015,7 @@ def _pooled_table(result: Mapping[str, Any], lat: Sequence[str]) -> list[str]:
             cells.append(f"{_f(e.get('mean_c'), 2)}{band} ({_f(e.get('share_positive'), 2)})")
         rows.append(
             f"| {r['threshold_bps']:g} | {r['samples']} | {r['moves']} | "
+            f"{_f(r.get('reaction_ms', {}).get('median'))} | "
             f"{_f(r['lifetime_ms']['median'])} | " + " | ".join(cells) + " |"
         )
     return rows
@@ -905,6 +1044,15 @@ def render_markdown(result: Mapping[str, Any]) -> str:
         f"Quote updates by series: {result.get('contracts', {}).get('quote_updates_by_series')}"
     )
     w.append(f"Moves found by threshold (bps in 1 s): {result.get('moves_by_threshold')}")
+    bq = (result.get("book_quality") or {}).get("KALSHI")
+    if bq:
+        w.append(
+            f"Kalshi book replay: {bq.get('books')} books, {bq.get('snapshots')} snapshots "
+            f"({bq.get('resets')} after a sequence restart), {bq.get('deltas_applied')} deltas; "
+            f"{bq.get('crossed')} crossed updates skipped, {bq.get('gaps')} sequence gaps, "
+            f"{bq.get('negative_quantity')} negative sizes, {bq.get('books_invalid_at_end')} "
+            "books invalid at the end."
+        )
     w.append("")
     dec = result.get("decision") or {}
     if dec:
@@ -919,8 +1067,10 @@ def render_markdown(result: Mapping[str, Any]) -> str:
     w.append(
         "Fair value = Kalshi's own mid 1 s before the move + the model's predicted change from "
         "the BTC move; edge = fair - price - taker fee, for the book observed L ms after the "
-        "move. Lifetime = how long the quote a taker would hit survived. Standard errors are "
-        "clustered by move (every in-play strike reacts to the same move)."
+        "move. Reaction = time until Kalshi's mid covered half the model's predicted "
+        "repricing (the maker reaction lag); lifetime = how long the quote a taker would hit "
+        "survived (ends at any re-quote or fill). Standard errors are clustered by move "
+        "(every in-play strike reacts to the same move)."
     )
     w.append("")
     if result.get("pooled"):

@@ -239,6 +239,7 @@ def _live_summary(mean_100: float) -> dict[str, object]:
         "samples": 400,
         "moves": 60,
         "lifetime_ms": {"p25": 40.0, "median": 110.0, "p75": 300.0, "share_beyond_horizon": 0.02},
+        "reaction_ms": {"n": 400, "p25": 90.0, "median": 240.0, "p75": 600.0},
         "edge_by_latency": edges,
         "anchored_edge_by_latency": edges,
     }
@@ -273,6 +274,7 @@ def test_report_with_live_summary_takes_the_real_market_call(tmp_path: Path) -> 
     assert "+1.50 ± 0.40" in text and "No real venue data was examined" not in text
     page = write_reports(result, tmp_path, live=live)[2].read_text()
     assert 'id="live"' in page and "Not on real Kalshi books" in page and "lost 1.00¢" in page
+    assert "within a median 240 ms" in page and "90 / 240 / 600" in text
     positive = _live_summary(0.8)
     assert decision_summary(result, positive)["real_market_decision"] == "COLLECT_MORE_DATA"
     page = write_reports(result, tmp_path, live=positive)[2].read_text()
