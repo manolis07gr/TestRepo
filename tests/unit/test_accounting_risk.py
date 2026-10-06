@@ -135,8 +135,9 @@ def _req(side: Side, qty: str, price: str, cid: str = CID, fam: str = "F") -> Or
 def test_T029_contract_family_and_portfolio_limits() -> None:
     risk = _risk()
     nav = D(10_000)  # contract 2% = 200, family 5% = 500, total 10% = 1000
-    assert risk.check_order(_req(Side.BUY, "500", "0.40"), nav=nav, positions={},
-                            working_orders=[]).approved
+    assert risk.check_order(
+        _req(Side.BUY, "500", "0.40"), nav=nav, positions={}, working_orders=[]
+    ).approved
     d = risk.check_order(_req(Side.BUY, "501", "0.40"), nav=nav, positions={}, working_orders=[])
     assert not d.approved and d.reasons == (ReasonCode.CONTRACT_LIMIT,)
     # selling YES (buying NO) risks (1 - p) per contract
@@ -147,13 +148,21 @@ def test_T029_contract_family_and_portfolio_limits() -> None:
         "KALSHI:A": PositionView(D(400), D(160), "F"),
         "KALSHI:B": PositionView(D(400), D(160), "F"),
     }
-    d = risk.check_order(_req(Side.BUY, "500", "0.40", cid="KALSHI:C"), nav=nav,
-                         positions=positions, working_orders=[])
+    d = risk.check_order(
+        _req(Side.BUY, "500", "0.40", cid="KALSHI:C"),
+        nav=nav,
+        positions=positions,
+        working_orders=[],
+    )
     assert not d.approved and d.reasons == (ReasonCode.EVENT_LIMIT,)
 
     positions = {f"KALSHI:{i}": PositionView(D(450), D(180), f"F{i}") for i in range(5)}
-    d = risk.check_order(_req(Side.BUY, "300", "0.40", cid="KALSHI:Z", fam="FZ"), nav=nav,
-                         positions=positions, working_orders=[])
+    d = risk.check_order(
+        _req(Side.BUY, "300", "0.40", cid="KALSHI:Z", fam="FZ"),
+        nav=nav,
+        positions=positions,
+        working_orders=[],
+    )
     assert not d.approved and d.reasons == (ReasonCode.PORTFOLIO_LIMIT,)
 
 
@@ -174,8 +183,9 @@ def test_T029_working_orders_count_toward_exposure() -> None:
             limit_price=D("0.40"),
         )
     ]
-    d = risk.check_order(_req(Side.BUY, "101", "0.40"), nav=D(10_000), positions={},
-                         working_orders=working)
+    d = risk.check_order(
+        _req(Side.BUY, "101", "0.40"), nav=D(10_000), positions={}, working_orders=working
+    )
     assert not d.approved and d.reasons == (ReasonCode.CONTRACT_LIMIT,)
 
 
@@ -188,11 +198,13 @@ def test_T030_daily_stop_blocks_new_risk_but_allows_reduction() -> None:
     risk.on_nav(day + 3, D("9800"))  # -2.00% -> stop
     assert risk.daily_stop_active
     positions = {CID: PositionView(D(100), D(40), "F")}
-    d = risk.check_order(_req(Side.BUY, "10", "0.40"), nav=D(9800), positions=positions,
-                         working_orders=[])
+    d = risk.check_order(
+        _req(Side.BUY, "10", "0.40"), nav=D(9800), positions=positions, working_orders=[]
+    )
     assert not d.approved and d.reasons == (ReasonCode.DAILY_STOP,)
-    d = risk.check_order(_req(Side.SELL, "50", "0.38"), nav=D(9800), positions=positions,
-                         working_orders=[])
+    d = risk.check_order(
+        _req(Side.SELL, "50", "0.38"), nav=D(9800), positions=positions, working_orders=[]
+    )
     assert d.approved and d.detail == "risk-reducing"
     risk.on_nav(day + NS_PER_DAY + 1, D(9800))  # next UTC day resets
     assert not risk.daily_stop_active
@@ -205,8 +217,9 @@ def test_T030_kill_switch_blocks_everything_and_calls_cancel_all() -> None:
     risk.activate_kill_switch(42, "manual")
     assert calls == [42]
     positions = {CID: PositionView(D(100), D(40), "F")}
-    d = risk.check_order(_req(Side.SELL, "50", "0.38"), nav=D(9800), positions=positions,
-                         working_orders=[])
+    d = risk.check_order(
+        _req(Side.SELL, "50", "0.38"), nav=D(9800), positions=positions, working_orders=[]
+    )
     assert not d.approved and d.reasons == (ReasonCode.KILL_SWITCH,)
     with pytest.raises(ValueError, match="operator"):
         risk.reset_kill_switch(43, "")

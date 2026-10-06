@@ -31,6 +31,8 @@ class FairValueTakerConfig:
     vol_window_s: int = 900
     vol_sample_s: int = 1
     fixed_vol: float | None = None
+    vol_instrument: str | None = None  # implied-vol index in percent (e.g. a DVOL feed)
+    vol_max_age_ms: int = 30_000
     vol_multiplier: float = 1.0
     vol_floor: float = 0.10
     vol_cap: float = 3.0
@@ -144,6 +146,14 @@ class FairValueTakerStrategy:
     def sigma(self, ctx: StrategyContext) -> float | None:
         if self.cfg.fixed_vol is not None:
             return self.cfg.fixed_vol * self.cfg.vol_multiplier
+        if self.cfg.vol_instrument is not None:
+            iv = ctx.state.ref.get(self.cfg.vol_instrument)
+            point = (
+                None if iv is None else iv.price_at(ctx.now_ns, self.cfg.vol_max_age_ms * NS_PER_MS)
+            )
+            if point is not None:
+                v = point[1] / 100.0 * self.cfg.vol_multiplier
+                return min(self.cfg.vol_cap, max(self.cfg.vol_floor, v))
         cached_at, cached = self._vol_cache
         if cached_at >= 0 and ctx.now_ns - cached_at < self.vol_recompute_ms * NS_PER_MS:
             return cached

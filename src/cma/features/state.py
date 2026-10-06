@@ -8,9 +8,9 @@ from __future__ import annotations
 
 import bisect
 import math
+from dataclasses import dataclass, field
 
 import numpy as np
-from dataclasses import dataclass, field
 
 from cma.domain.enums import QualityFlag, Venue
 from cma.domain.models import (

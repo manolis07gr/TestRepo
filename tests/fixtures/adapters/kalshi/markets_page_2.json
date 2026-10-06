@@ -1,0 +1,55 @@
+{"cursor": "", "markets": [{
+  "ticker": "KXBTCD-26OCT0617-T111999.99",
+  "event_ticker": "KXBTCD-26OCT0617",
+  "market_type": "binary",
+  "title": "Bitcoin price on Oct 6, 2026 at 5pm EDT?",
+  "subtitle": "$112,000 or above",
+  "yes_sub_title": "$112,000 or above",
+  "no_sub_title": "$112,000 or above",
+  "open_time": "2026-10-05T21:00:00Z",
+  "close_time": "2026-10-06T21:00:00Z",
+  "expected_expiration_time": "2026-10-06T21:05:00Z",
+  "expiration_time": "2026-10-13T21:00:00Z",
+  "latest_expiration_time": "2026-10-13T21:00:00Z",
+  "settlement_timer_seconds": 60,
+  "status": "active",
+  "response_price_units": "usd_cent",
+  "notional_value_dollars": "1.0000",
+  "yes_bid_dollars": "0.4500",
+  "yes_ask_dollars": "0.4700",
+  "no_bid_dollars": "0.5300",
+  "no_ask_dollars": "0.5500",
+  "last_price_dollars": "0.4600",
+  "volume_fp": "15234.00",
+  "volume_24h_fp": "8120.00",
+  "open_interest_fp": "9876.00",
+  "liquidity_dollars": "12345.6700",
+  "result": "",
+  "can_close_early": true,
+  "expiration_value": "",
+  "strike_type": "greater",
+  "floor_strike": 111999.99,
+  "rules_primary": "If the average of the CF Benchmarks' Bitcoin Real-Time Index (BRTI) for the 60 seconds prior to 5:00 PM EDT on Oct 6, 2026 is above 111999.99, then the market resolves to Yes.",
+  "rules_secondary": "Not all cryptocurrency price data is the same. The market uses BRTI as published by CF Benchmarks.",
+  "early_close_condition": "This market will close and expire early if the event occurs.",
+  "price_level_structure": "tapered_deci_cent",
+  "price_ranges": [
+    {
+      "start": "0.0000",
+      "end": "0.1000",
+      "step": "0.0010"
+    },
+    {
+      "start": "0.1000",
+      "end": "0.9000",
+      "step": "0.0100"
+    },
+    {
+      "start": "0.9000",
+      "end": "1.0000",
+      "step": "0.0010"
+    }
+  ],
+  "exchange_index": 0,
+  "tick_size": 1
+}]}

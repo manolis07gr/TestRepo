@@ -1,0 +1,96 @@
+# SAMPLE mapping family (DRAFT only - nothing here has been reviewed or approved).
+# Produced by cma.mapping.parsers (parser:kalshi-series/v1) from the sample KXBTCD
+# contracts in tests/fixtures/nested_contracts.json. A human reviewer must check each
+# mapping against the current contract rules before MappingRegistry.review().
+schema: cma.contract_mappings/v1
+records:
+- contract_id: KALSHI:KXBTCD-26OCT0617-T109999.99
+  venue: KALSHI
+  versions:
+  - version: 1
+    review_status: DRAFT
+    proposed_by: parser:kalshi-series/v1
+    proposed_at: '2026-10-06T12:00:00.000000000Z'
+    mapping:
+      venue: KALSHI
+      contract_id: KALSHI:KXBTCD-26OCT0617-T109999.99
+      underlyings:
+      - BTC-USD
+      operator: GT
+      strikes:
+      - '109999.99'
+      observation_start: '2026-10-06T20:59:00.000000000Z'
+      observation_end: '2026-10-06T21:00:00.000000000Z'
+      observation_method: AVG_60S_BEFORE
+      timezone: America/New_York
+      resolution_source: CF_BENCHMARKS_BRTI
+      rounding_rule: NONE
+      early_close_rule: NO_EARLY_CLOSE;MISSING_INDEX_DATA_RESOLVES_NO
+      outcome_semantics: YES iff AVG_60S_BEFORE of CF_BENCHMARKS_BRTI before 2026-10-06 17:00:00 EDT >
+        109999.99
+      event_family: BTC-USD|AVG_60S_BEFORE|2026-10-06T21:00:00.000000000Z
+      notes: DRAFT proposed by parser:kalshi-series/v1 from series_semantics.yaml row KXBTCD (verified=True;
+        verified 2026-10-06 from contract terms; re-check at runtime). strike_type=greater. Missing/incomplete
+        index data resolves affected strikes No. Requires human review.
+    review: null
+    approval: null
+- contract_id: KALSHI:KXBTCD-26OCT0617-T110999.99
+  venue: KALSHI
+  versions:
+  - version: 1
+    review_status: DRAFT
+    proposed_by: parser:kalshi-series/v1
+    proposed_at: '2026-10-06T12:00:00.000000000Z'
+    mapping:
+      venue: KALSHI
+      contract_id: KALSHI:KXBTCD-26OCT0617-T110999.99
+      underlyings:
+      - BTC-USD
+      operator: GT
+      strikes:
+      - '110999.99'
+      observation_start: '2026-10-06T20:59:00.000000000Z'
+      observation_end: '2026-10-06T21:00:00.000000000Z'
+      observation_method: AVG_60S_BEFORE
+      timezone: America/New_York
+      resolution_source: CF_BENCHMARKS_BRTI
+      rounding_rule: NONE
+      early_close_rule: NO_EARLY_CLOSE;MISSING_INDEX_DATA_RESOLVES_NO
+      outcome_semantics: YES iff AVG_60S_BEFORE of CF_BENCHMARKS_BRTI before 2026-10-06 17:00:00 EDT >
+        110999.99
+      event_family: BTC-USD|AVG_60S_BEFORE|2026-10-06T21:00:00.000000000Z
+      notes: DRAFT proposed by parser:kalshi-series/v1 from series_semantics.yaml row KXBTCD (verified=True;
+        verified 2026-10-06 from contract terms; re-check at runtime). strike_type=greater. Missing/incomplete
+        index data resolves affected strikes No. Requires human review.
+    review: null
+    approval: null
+- contract_id: KALSHI:KXBTCD-26OCT0617-T111999.99
+  venue: KALSHI
+  versions:
+  - version: 1
+    review_status: DRAFT
+    proposed_by: parser:kalshi-series/v1
+    proposed_at: '2026-10-06T12:00:00.000000000Z'
+    mapping:
+      venue: KALSHI
+      contract_id: KALSHI:KXBTCD-26OCT0617-T111999.99
+      underlyings:
+      - BTC-USD
+      operator: GT
+      strikes:
+      - '111999.99'
+      observation_start: '2026-10-06T20:59:00.000000000Z'
+      observation_end: '2026-10-06T21:00:00.000000000Z'
+      observation_method: AVG_60S_BEFORE
+      timezone: America/New_York
+      resolution_source: CF_BENCHMARKS_BRTI
+      rounding_rule: NONE
+      early_close_rule: NO_EARLY_CLOSE;MISSING_INDEX_DATA_RESOLVES_NO
+      outcome_semantics: YES iff AVG_60S_BEFORE of CF_BENCHMARKS_BRTI before 2026-10-06 17:00:00 EDT >
+        111999.99
+      event_family: BTC-USD|AVG_60S_BEFORE|2026-10-06T21:00:00.000000000Z
+      notes: DRAFT proposed by parser:kalshi-series/v1 from series_semantics.yaml row KXBTCD (verified=True;
+        verified 2026-10-06 from contract terms; re-check at runtime). strike_type=greater. Missing/incomplete
+        index data resolves affected strikes No. Requires human review.
+    review: null
+    approval: null

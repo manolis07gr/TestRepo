@@ -13,7 +13,9 @@ INST = "KALSHI:FIXTURE-BOOK"
 
 def test_T031_kill_switch_stops_new_orders_and_cancels_resting_makers() -> None:
     events = [snapshot(INST, 1, ms(0), [("0.40", "100")], [("0.50", "100")])]
-    events += [delta(INST, i + 2, ms(10 * (i + 1)), [(BookSide.BID, "0.40", "1")]) for i in range(60)]
+    events += [
+        delta(INST, i + 2, ms(10 * (i + 1)), [(BookSide.BID, "0.40", "1")]) for i in range(60)
+    ]
 
     def make_quotes(ctx):  # type: ignore[no-untyped-def]
         return [

@@ -1,0 +1,198 @@
+{
+  "bad_pair": {
+    "a": {
+      "contract": {
+        "can_close_early": false,
+        "close_ts": "2026-10-06T21:00:00.000000000Z",
+        "contract_id": "KALSHI:KXBTCD-26OCT0617-T111999.99",
+        "event_id": "KXBTCD-26OCT0617",
+        "native_id": "KXBTCD-26OCT0617-T111999.99",
+        "no_semantics": "At or below 111999.99",
+        "open_ts": "2026-10-06T17:00:00.000000000Z",
+        "resolve_ts": null,
+        "rules_text": "If the simple average of the sixty seconds of CF Benchmarks' Bitcoin Real-Time Index (BRTI) before 5 PM EDT is above 111999.99 at 5 PM EDT on Oct 6, 2026, then the market resolves to Yes.",
+        "series_id": "KXBTCD",
+        "settlement_metadata": {
+          "floor_strike": 111999.99,
+          "strike_type": "greater"
+        },
+        "status": "OPEN",
+        "tick_size": "0.01",
+        "title": "Bitcoin price today at 5pm EDT?",
+        "venue": "KALSHI",
+        "yes_semantics": "Above 111999.99"
+      },
+      "mapping": {
+        "contract_id": "KALSHI:KXBTCD-26OCT0617-T111999.99",
+        "early_close_rule": "NO_EARLY_CLOSE;MISSING_INDEX_DATA_RESOLVES_NO",
+        "event_family": "BTC-USD|AVG_60S_BEFORE|2026-10-06T21:00:00.000000000Z",
+        "notes": "fixture mapping (hand-written)",
+        "observation_end": "2026-10-06T21:00:00.000000000Z",
+        "observation_method": "AVG_60S_BEFORE",
+        "observation_start": "2026-10-06T20:59:00.000000000Z",
+        "operator": "GT",
+        "outcome_semantics": "YES iff the 60 s simple average of BRTI before 2026-10-06 17:00 ET > 111999.99",
+        "resolution_source": "CF_BENCHMARKS_BRTI",
+        "rounding_rule": "NONE",
+        "strikes": [
+          "111999.99"
+        ],
+        "timezone": "America/New_York",
+        "underlyings": [
+          "BTC-USD"
+        ],
+        "venue": "KALSHI"
+      }
+    },
+    "b": {
+      "contract": {
+        "can_close_early": false,
+        "close_ts": "2026-10-06T16:00:00.000000000Z",
+        "contract_id": "POLYMARKET:0xbtc-above-111999.99-oct-6",
+        "event_id": "event-0xbtc-above-111999.99-oct-6",
+        "native_id": "0xbtc-above-111999.99-oct-6",
+        "no_semantics": "No",
+        "open_ts": "2026-10-03T16:00:00.000000000Z",
+        "resolve_ts": null,
+        "rules_text": "This market will resolve to \"Yes\" if the Binance 1 minute candle for BTCUSDT 16:00 in the UTC timezone on the date specified in the title has a final \"Close\" price higher than the price specified in the title. Otherwise, this market will resolve to \"No\".",
+        "series_id": null,
+        "settlement_metadata": {},
+        "status": "OPEN",
+        "tick_size": "0.01",
+        "title": "Bitcoin above $111,999.99 on October 6?",
+        "venue": "POLYMARKET",
+        "yes_semantics": "Yes"
+      },
+      "mapping": {
+        "contract_id": "POLYMARKET:0xbtc-above-111999.99-oct-6",
+        "early_close_rule": "NO_EARLY_CLOSE;MISSING_INDEX_DATA_RESOLVES_NO",
+        "event_family": "BTCUSDT@BINANCE|CANDLE_CLOSE_1M|2026-10-06T16:01:00.000000000Z",
+        "notes": "fixture mapping (hand-written); deceptively similar title, different semantics",
+        "observation_end": "2026-10-06T16:01:00.000000000Z",
+        "observation_method": "CANDLE_CLOSE_1M",
+        "observation_start": "2026-10-06T16:00:00.000000000Z",
+        "operator": "GT",
+        "outcome_semantics": "YES iff Binance BTCUSDT 1m candle opening 16:00 UTC closes > 111999.99",
+        "resolution_source": "BINANCE_BTCUSDT_1M_CLOSE",
+        "rounding_rule": "NONE",
+        "strikes": [
+          "111999.99"
+        ],
+        "timezone": "UTC",
+        "underlyings": [
+          "BTCUSDT@BINANCE"
+        ],
+        "venue": "POLYMARKET"
+      }
+    },
+    "expected": {
+      "equivalent": false,
+      "mismatched_fields": [
+        "underlyings",
+        "observation_start",
+        "observation_end",
+        "observation_method",
+        "timezone",
+        "resolution_source"
+      ],
+      "relation": "NONE"
+    }
+  },
+  "description": "Good pair: Kalshi KXBTCD 5 PM ET BRTI 60 s average > 111999.99 vs a SYNTHETIC Polymarket market with identical semantics. Bad pair: the same Kalshi contract vs 'Bitcoin above $111,999.99 on October 6?' resolved on the Binance BTC/USDT 1-minute candle at 16:00 UTC (12 PM ET): different cutoff instant, timezone and source.",
+  "generator": "scripts/fixtures/gen_mapping_structural.py",
+  "good_pair": {
+    "a": {
+      "contract": {
+        "can_close_early": false,
+        "close_ts": "2026-10-06T21:00:00.000000000Z",
+        "contract_id": "KALSHI:KXBTCD-26OCT0617-T111999.99",
+        "event_id": "KXBTCD-26OCT0617",
+        "native_id": "KXBTCD-26OCT0617-T111999.99",
+        "no_semantics": "At or below 111999.99",
+        "open_ts": "2026-10-06T17:00:00.000000000Z",
+        "resolve_ts": null,
+        "rules_text": "If the simple average of the sixty seconds of CF Benchmarks' Bitcoin Real-Time Index (BRTI) before 5 PM EDT is above 111999.99 at 5 PM EDT on Oct 6, 2026, then the market resolves to Yes.",
+        "series_id": "KXBTCD",
+        "settlement_metadata": {
+          "floor_strike": 111999.99,
+          "strike_type": "greater"
+        },
+        "status": "OPEN",
+        "tick_size": "0.01",
+        "title": "Bitcoin price today at 5pm EDT?",
+        "venue": "KALSHI",
+        "yes_semantics": "Above 111999.99"
+      },
+      "mapping": {
+        "contract_id": "KALSHI:KXBTCD-26OCT0617-T111999.99",
+        "early_close_rule": "NO_EARLY_CLOSE;MISSING_INDEX_DATA_RESOLVES_NO",
+        "event_family": "BTC-USD|AVG_60S_BEFORE|2026-10-06T21:00:00.000000000Z",
+        "notes": "fixture mapping (hand-written)",
+        "observation_end": "2026-10-06T21:00:00.000000000Z",
+        "observation_method": "AVG_60S_BEFORE",
+        "observation_start": "2026-10-06T20:59:00.000000000Z",
+        "operator": "GT",
+        "outcome_semantics": "YES iff the 60 s simple average of BRTI before 2026-10-06 17:00 ET > 111999.99",
+        "resolution_source": "CF_BENCHMARKS_BRTI",
+        "rounding_rule": "NONE",
+        "strikes": [
+          "111999.99"
+        ],
+        "timezone": "America/New_York",
+        "underlyings": [
+          "BTC-USD"
+        ],
+        "venue": "KALSHI"
+      }
+    },
+    "b": {
+      "contract": {
+        "can_close_early": false,
+        "close_ts": "2026-10-06T21:00:00.000000000Z",
+        "contract_id": "POLYMARKET:0xsynthetic-brti-5pm-et-111999.99",
+        "event_id": "event-0xsynthetic-brti-5pm-et-111999.99",
+        "native_id": "0xsynthetic-brti-5pm-et-111999.99",
+        "no_semantics": "No",
+        "open_ts": "2026-10-03T21:00:00.000000000Z",
+        "resolve_ts": null,
+        "rules_text": "SYNTHETIC FIXTURE MARKET. Resolves Yes if the simple average of the sixty seconds of CF Benchmarks' Bitcoin Real-Time Index (BRTI) before 5 PM ET on October 6, 2026 is above 111,999.99. If index data is missing or incomplete the market resolves No.",
+        "series_id": null,
+        "settlement_metadata": {
+          "group_item_title": "111,999.99"
+        },
+        "status": "OPEN",
+        "tick_size": "0.01",
+        "title": "Will the BRTI 60-second average be above $111,999.99 at 5 PM ET on October 6, 2026?",
+        "venue": "POLYMARKET",
+        "yes_semantics": "Yes"
+      },
+      "mapping": {
+        "contract_id": "POLYMARKET:0xsynthetic-brti-5pm-et-111999.99",
+        "early_close_rule": "NO_EARLY_CLOSE;MISSING_INDEX_DATA_RESOLVES_NO",
+        "event_family": "BTC-USD|AVG_60S_BEFORE|2026-10-06T21:00:00.000000000Z",
+        "notes": "SYNTHETIC equivalent of the Kalshi contract (fixture only)",
+        "observation_end": "2026-10-06T21:00:00.000000000Z",
+        "observation_method": "AVG_60S_BEFORE",
+        "observation_start": "2026-10-06T20:59:00.000000000Z",
+        "operator": "GT",
+        "outcome_semantics": "YES iff the 60 s simple average of BRTI before 2026-10-06 17:00 ET > 111999.99",
+        "resolution_source": "CF_BENCHMARKS_BRTI",
+        "rounding_rule": "NONE",
+        "strikes": [
+          "111999.99"
+        ],
+        "timezone": "America/New_York",
+        "underlyings": [
+          "BTC-USD"
+        ],
+        "venue": "POLYMARKET"
+      }
+    },
+    "expected": {
+      "equivalent": true,
+      "mismatched_fields": [],
+      "relation": "SAME"
+    }
+  },
+  "schema": "cma.fixture.equivalence_good_bad/v1"
+}

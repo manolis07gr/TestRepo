@@ -229,7 +229,7 @@ class TradingCore:
         venue_taker_delay_ms: Mapping[Venue, int] | None = None,
         sequence_free_venues: frozenset[Venue] = frozenset({Venue.POLYMARKET}),
         mark_method: MarkMethod = MarkMethod.MID,
-        markout_horizons_ms: Sequence[int] = (1_000, 5_000, 30_000),
+        markout_horizons_ms: Sequence[int] = (1_000, 5_000, 30_000, 60_000),
         strict_lookahead: bool = True,
         family_of: Callable[[str], str] | None = None,
     ) -> None:

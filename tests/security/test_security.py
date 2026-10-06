@@ -93,9 +93,12 @@ def test_T053_no_order_placement_code_outside_disabled_adapter() -> None:
             continue
         tree = ast.parse(path.read_text(encoding="utf-8"))
         for node in ast.walk(tree):
-            if isinstance(node, ast.Constant) and isinstance(node.value, str):
-                if order_entry.search(node.value):
-                    offenders.append(f"{path}:{node.lineno}:{node.value[:60]}")
+            if (
+                isinstance(node, ast.Constant)
+                and isinstance(node.value, str)
+                and order_entry.search(node.value)
+            ):
+                offenders.append(f"{path}:{node.lineno}:{node.value[:60]}")
             if isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef) and node.name in (
                 "place_order",
                 "post_order",
@@ -112,7 +115,10 @@ def test_T053_no_order_placement_code_outside_disabled_adapter() -> None:
 def test_T054_secrets_never_reach_logs_or_snapshots(monkeypatch: pytest.MonkeyPatch) -> None:
     SECRETS.clear()
     monkeypatch.setenv("KALSHI_API_KEY_ID", "key-id-1234567890")
-    monkeypatch.setenv("KALSHI_PRIVATE_KEY_PEM", "-----BEGIN PRIVATE KEY-----\nMIIEsecretbody\n-----END PRIVATE KEY-----")
+    monkeypatch.setenv(
+        "KALSHI_PRIVATE_KEY_PEM",
+        "-----BEGIN PRIVATE KEY-----\nMIIEsecretbody\n-----END PRIVATE KEY-----",
+    )
     key = load_secret("KALSHI_API_KEY_ID")
     pem = load_secret("KALSHI_PRIVATE_KEY_PEM")
     assert key is not None and pem is not None

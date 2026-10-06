@@ -273,7 +273,9 @@ def run_replay(
 ) -> TradingCore:
     cfg = cfg or config()
     contracts = list(contracts) or [contract()]
-    maps = {m.contract_id: m for m in (list(mappings) or [mapping(c.contract_id) for c in contracts])}
+    maps = {
+        m.contract_id: m for m in (list(mappings) or [mapping(c.contract_id) for c in contracts])
+    }
     profile = LatencyProfile(
         outbound_ms=outbound_ms, compute_ms=compute_ms, ack_ms=ack_ms, cancel_ms=cancel_ms
     )

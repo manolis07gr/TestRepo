@@ -1,0 +1,48 @@
+{
+  "id": "512345",
+  "question": "Will Bitcoin be above $110,000 on October 31?",
+  "conditionId": "0x5f65177b394277fd294cd75650044e32ba009a95022d88a0c1d565897d72f8f1",
+  "slug": "bitcoin-above-110k-on-october-31",
+  "resolutionSource": "https://www.binance.com/en/trade/BTC_USDT",
+  "endDate": "2026-10-31T16:00:00Z",
+  "startDate": "2026-10-01T15:12:43.215Z",
+  "acceptingOrdersTimestamp": "2026-10-01T15:20:00Z",
+  "description": "This market will resolve to \"Yes\" if the Binance 1 minute candle for BTCUSDT 12:00 in the ET timezone (noon) on the date specified in the title has a final \"Close\" price higher than the price specified in the title. Otherwise, this market will resolve to \"No\".",
+  "outcomes": "[\"Yes\", \"No\"]",
+  "outcomePrices": "[\"0.62\", \"0.38\"]",
+  "volume": "125432.12",
+  "active": true,
+  "closed": false,
+  "archived": false,
+  "acceptingOrders": true,
+  "enableOrderBook": true,
+  "orderPriceMinTickSize": 0.01,
+  "orderMinSize": 5,
+  "negRisk": false,
+  "clobTokenIds": "[\"71321045679252212594626385532706912750332728571942532289631379312455583992563\", \"52114319501245915516055106046884209969926127482827954674443846427813813222426\"]",
+  "umaResolutionStatus": null,
+  "questionID": "0x6d4f8a51b2c4e2f8a1a7f4b3c9d0e6f1a2b3c4d5e6f708192a3b4c5d6e7f8091",
+  "feesEnabled": true,
+  "feeSchedule": {
+    "rate": 0.07,
+    "exponent": 1,
+    "takerOnly": true,
+    "rebateRate": 0.2
+  },
+  "events": [
+    {
+      "id": "61234",
+      "ticker": "bitcoin-above-on-october-31",
+      "slug": "bitcoin-above-on-october-31",
+      "title": "Bitcoin above ___ on October 31?",
+      "category": "Crypto",
+      "tags": [
+        {
+          "id": "21",
+          "label": "Crypto",
+          "slug": "crypto"
+        }
+      ]
+    }
+  ]
+}

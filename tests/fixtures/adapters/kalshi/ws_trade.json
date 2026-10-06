@@ -1,0 +1,1 @@
+{"type":"trade","sid":11,"msg":{"trade_id":"d91bc706-ee49-470d-82d8-11418bda6fed","market_ticker":"KXBTCD-26OCT0617-T110999.99","yes_price_dollars":"0.4600","no_price_dollars":"0.5400","count_fp":"136.00","taker_outcome_side":"no","taker_side":"no","taker_book_side":"bid","is_block_trade":false,"ts":1791318601,"ts_ms":1791318601123},"sending_ts_ms":1791318601125}

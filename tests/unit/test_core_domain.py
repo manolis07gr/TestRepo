@@ -141,7 +141,7 @@ def test_T002_no_book_maps_to_yes_book_on_tick_and_sorted() -> None:
 # ---------------------------------------------------------------- T003
 
 
-def _fill(cid: str, side: Side, price: Decimal, qty: Decimal, fee: Decimal = D(0)) -> Fill:
+def _fill(cid: str, side: Side, price: Decimal, qty: Decimal, fee: Decimal | None = None) -> Fill:
     return Fill(
         fill_id=f"f-{cid}-{side}-{price}-{qty}",
         order_id="o",
@@ -152,7 +152,7 @@ def _fill(cid: str, side: Side, price: Decimal, qty: Decimal, fee: Decimal = D(0
         fill_ts_ns=1,
         price=price,
         quantity=qty,
-        fee=fee,
+        fee=D(0) if fee is None else fee,
         fee_schedule_version=KALSHI_STANDARD.tag,
         liquidity_role=LiquidityRole.TAKER,
     )

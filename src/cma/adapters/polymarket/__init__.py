@@ -1,1 +1,51 @@
+"""Polymarket adapter: CLOB market channel + Gamma/CLOB/Data API parsing and clients."""
 
+from cma.adapters.polymarket.client import (
+    POLYMARKET_CLOB_URL,
+    POLYMARKET_DATA_URL,
+    POLYMARKET_GAMMA_URL,
+    POLYMARKET_KEEPALIVE,
+    POLYMARKET_WS_MARKET_URL,
+    PolymarketRestClient,
+    build_market_subscription,
+)
+from cma.adapters.polymarket.parser import (
+    POLYMARKET_DEFAULT_FEE_SCHEDULE,
+    POLYMARKET_UNMAPPED_FEE_SCHEDULE,
+    PolymarketAdapter,
+    PolymarketEvent,
+    PricePoint,
+    TickSizeChange,
+    parse_book,
+    parse_data_trades,
+    parse_gamma_event,
+    parse_gamma_market,
+    parse_prices_history,
+    parse_tick_size_change,
+    polymarket_instrument,
+    select_fee_schedule,
+)
+
+__all__ = [
+    "POLYMARKET_CLOB_URL",
+    "POLYMARKET_DATA_URL",
+    "POLYMARKET_DEFAULT_FEE_SCHEDULE",
+    "POLYMARKET_GAMMA_URL",
+    "POLYMARKET_KEEPALIVE",
+    "POLYMARKET_UNMAPPED_FEE_SCHEDULE",
+    "POLYMARKET_WS_MARKET_URL",
+    "PolymarketAdapter",
+    "PolymarketEvent",
+    "PolymarketRestClient",
+    "PricePoint",
+    "TickSizeChange",
+    "build_market_subscription",
+    "parse_book",
+    "parse_data_trades",
+    "parse_gamma_event",
+    "parse_gamma_market",
+    "parse_prices_history",
+    "parse_tick_size_change",
+    "polymarket_instrument",
+    "select_fee_schedule",
+]

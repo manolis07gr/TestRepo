@@ -244,7 +244,9 @@ def test_T018_replay_records_arrival_times() -> None:
 # ---------------------------------------------------------------- T019
 
 
-@pytest.mark.parametrize(("latency_ms", "expected_key"), [(0, "fills_at_0ms"), (100, "fills_at_100ms")])
+@pytest.mark.parametrize(
+    ("latency_ms", "expected_key"), [(0, "fills_at_0ms"), (100, "fills_at_100ms")]
+)
 def test_T019_no_fill_against_liquidity_gone_before_arrival(
     latency_ms: int, expected_key: str
 ) -> None:
@@ -325,7 +327,10 @@ def test_T022_fill_price_never_violates_limit_even_under_stress_slippage() -> No
 @settings(max_examples=60, deadline=None)
 @given(
     asks=st.lists(
-        st.tuples(st.integers(1, 99), st.integers(1, 50)), min_size=1, max_size=6, unique_by=lambda t: t[0]
+        st.tuples(st.integers(1, 99), st.integers(1, 50)),
+        min_size=1,
+        max_size=6,
+        unique_by=lambda t: t[0],
     ),
     limit=st.integers(1, 99),
     qty=st.integers(1, 200),
@@ -390,7 +395,7 @@ def test_T023_trade_through_mode_ignores_trades_at_our_price() -> None:
 
 
 def test_T023_crossing_liquidity_fills_resting_order_at_its_price() -> None:
-    sim, o = _resting_bid_sim()
+    sim, _o = _resting_bid_sim()
     fills = sim.on_venue_event(delta(INST, 2, 20, [(BookSide.ASK, "0.47", "8")]), 20)
     assert [(f.price, f.quantity) for f in fills] == [(D("0.48"), D(8))]
 

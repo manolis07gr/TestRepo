@@ -1,0 +1,11 @@
+{
+  "jsonrpc": "2.0",
+  "error": {
+    "code": 10009,
+    "message": "too_many_requests"
+  },
+  "usIn": 1,
+  "usOut": 2,
+  "usDiff": 1,
+  "testnet": false
+}

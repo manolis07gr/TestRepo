@@ -1,0 +1,1 @@
+{"type":"orderbook_delta","sid":2,"seq":3,"msg":{"market_ticker":"KXBTCD-26OCT0617-T110999.99","price":44,"delta":-20,"side":"yes"}}

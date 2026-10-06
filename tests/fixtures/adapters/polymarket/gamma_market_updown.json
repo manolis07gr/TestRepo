@@ -1,0 +1,26 @@
+{
+  "id": "601111",
+  "question": "Bitcoin Up or Down - October 6, 4:15PM-4:30PM ET",
+  "conditionId": "0xbd31dc8a20211944f6b70f31557f1001557b59905b7738480ca09bd4532f84af",
+  "slug": "btc-updown-15m-1791317700",
+  "resolutionSource": "https://data.chain.link/streams/btc-usd",
+  "endDate": "2026-10-06T20:30:00Z",
+  "startDate": "2026-10-05T20:16:02.511Z",
+  "description": "This market will resolve to \"Up\" if the Bitcoin price at the end of the time range specified in the title is greater than or equal to the price at the beginning of that range. Otherwise, it will resolve to \"Down\".",
+  "outcomes": "[\"Up\", \"Down\"]",
+  "outcomePrices": "[\"0.505\", \"0.495\"]",
+  "active": true,
+  "closed": false,
+  "acceptingOrders": true,
+  "orderPriceMinTickSize": 0.01,
+  "orderMinSize": 5,
+  "negRisk": false,
+  "clobTokenIds": "[\"11015470973684177829729219287262166995141465048508201953575582100565462316088\", \"65818619657568813474341868652308942079804919287380422192892211131408793125422\"]",
+  "feesEnabled": true,
+  "feeSchedule": {
+    "rate": 0.07,
+    "exponent": 1,
+    "takerOnly": true,
+    "rebateRate": 0.2
+  }
+}

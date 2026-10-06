@@ -32,6 +32,7 @@ dev = [
   "scipy-stubs",
 ]
 postgres = ["psycopg[binary]>=3.1"]
+kalshi-auth = ["cryptography>=42"]
 
 [project.scripts]
 cma = "cma.cli.main:main"
@@ -69,8 +70,8 @@ ignore = [
 ]
 
 [tool.ruff.lint.per-file-ignores]
-"tests/**" = ["PLR2004", "S101", "N802", "PLC2701", "DTZ001", "N806"]
-"scripts/**" = ["DTZ005"]
+"tests/**" = ["PLR2004", "S101", "N802", "PLC2701", "DTZ001", "N806", "N999", "PT018", "PLR0917"]
+"scripts/**" = ["DTZ005", "N802", "PLR0917"]
 
 [tool.mypy]
 python_version = "3.12"

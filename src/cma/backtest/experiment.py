@@ -112,7 +112,7 @@ class DatasetSpec:
                 mappings=m.mappings,
                 settlements=m.settlements,
                 closes=m.closes,
-                reference_instruments=frozenset({m.reference_instrument}),
+                reference_instruments=m.reference_instruments,
                 dataset_hash=_sha(self.to_dict()),
                 provenance={"generator": "cma.research.synthetic", "stats": m.stats},
             )
@@ -147,7 +147,10 @@ def _build_fv_taker(ds: LoadedDataset, params: Mapping[str, Any]) -> list[Strate
 
     maps = {m.contract_id: m for m in ds.mappings}
     pairs = [(c, maps[c.contract_id]) for c in ds.contracts if c.contract_id in maps]
-    ref = params.get("reference_instrument") or sorted(ds.reference_instruments)[0]
+    ref = (
+        params.get("reference_instrument")
+        or sorted(r for r in ds.reference_instruments if not r.endswith("DVOL"))[0]
+    )
     kwargs = {k: v for k, v in params.items() if k != "reference_instrument"}
     for key in ("uncertainty_bps", "target_quantity"):
         if key in kwargs:

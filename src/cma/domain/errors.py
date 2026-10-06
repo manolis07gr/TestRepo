@@ -47,6 +47,10 @@ class FinalTestAccessError(CMAError):
     """Training/selection code attempted to read the locked final-test partition."""
 
 
+class LeakageError(CMAError):
+    """Statistics were (or would be) estimated on rows belonging to a held-out fold."""
+
+
 class ExpiryMismatchError(CMAError):
     """An option expiry does not match a contract expiry and no explicit rule allows it."""
 

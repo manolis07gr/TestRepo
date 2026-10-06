@@ -73,7 +73,10 @@ def _metrics(net: float, n_positions: int = 50, **conc: float) -> TradingMetrics
 
 def _grid(net_by_cell: dict[tuple[int, str], float], **kw: float) -> StressGrid:
     return StressGrid(
-        [RunResult(lat, cost, _metrics(v, **kw), f"h{lat}{cost}", 0) for (lat, cost), v in net_by_cell.items()]
+        [
+            RunResult(lat, cost, _metrics(v, **kw), f"h{lat}{cost}", 0)
+            for (lat, cost), v in net_by_cell.items()
+        ]
     )
 
 
@@ -136,23 +139,37 @@ def test_T050_higher_fees_with_identical_fills_never_improve_net_pnl() -> None:
 
 def test_T051_candidate_requires_positive_untouched_test() -> None:
     policy = PromotionPolicy(criterion=NetPnlCriterion(latency_ms=250, cost="base"))
-    neg = decide(final_test=_full_grid(-12.0), policy=policy, sensitivity_net_pnls=[1, 2, 3],
-                 mappings_approved_paper=True)
+    neg = decide(
+        final_test=_full_grid(-12.0),
+        policy=policy,
+        sensitivity_net_pnls=[1, 2, 3],
+        mappings_approved_paper=True,
+    )
     assert neg.decision is not Decision.FORWARD_PAPER_CANDIDATE
     assert neg.decision is Decision.REJECT
     assert not neg.gate("oos_net_pnl").passed
-    pos = decide(final_test=_full_grid(25.0), policy=policy, sensitivity_net_pnls=[1, 2, 3],
-                 mappings_approved_paper=True)
+    pos = decide(
+        final_test=_full_grid(25.0),
+        policy=policy,
+        sensitivity_net_pnls=[1, 2, 3],
+        mappings_approved_paper=True,
+    )
     assert pos.decision is Decision.FORWARD_PAPER_CANDIDATE
     # positive at base but not under worse latency -> not viable
-    cells = {(lat, c): (25.0 if lat <= 250 else -5.0) for lat in MANDATORY_LATENCY_GRID_MS
-             for c in ("base", "fees_x1.5", "slip_+1tick")}
+    cells = {
+        (lat, c): (25.0 if lat <= 250 else -5.0)
+        for lat in MANDATORY_LATENCY_GRID_MS
+        for c in ("base", "fees_x1.5", "slip_+1tick")
+    }
     fragile = decide(final_test=_grid(cells), policy=policy, mappings_approved_paper=True)
     assert fragile.decision is Decision.REJECT
     assert not fragile.gate("stress_latency_viable").passed
     # too few positions -> collect more data rather than a verdict
-    thin = decide(final_test=_grid({k: 5.0 for k in cells}, n_positions=5), policy=policy,
-                  mappings_approved_paper=True)
+    thin = decide(
+        final_test=_grid(dict.fromkeys(cells, 5.0), n_positions=5),
+        policy=policy,
+        mappings_approved_paper=True,
+    )
     assert thin.decision is Decision.COLLECT_MORE_DATA
 
 
@@ -166,7 +183,7 @@ def test_T052_paper_window_must_complete_before_promotion() -> None:
         assert_paper_complete(fresh)
     midway = decide(**kw, paper_days_completed=6.5)
     assert midway.decision is Decision.CONTINUE_PAPER
-    with pytest.raises(PromotionError, match="6.5 of 14"):
+    with pytest.raises(PromotionError, match=r"6\.5 of 14"):
         assert_paper_complete(midway)
     done = decide(**kw, paper_days_completed=14.2)
     assert_paper_complete(done)

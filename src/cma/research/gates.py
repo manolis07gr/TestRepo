@@ -7,6 +7,7 @@ outcome here is "forward-paper observation complete, eligible for a separate rev
 
 from __future__ import annotations
 
+import contextlib
 from collections.abc import Sequence
 from dataclasses import dataclass, field
 
@@ -115,10 +116,8 @@ def decide(
     crit = policy.criterion
     gates.append(out_of_sample_gate(final_test, crit, ci_lower))
     base = None
-    try:
+    with contextlib.suppress(KeyError):
         base = final_test.get(crit.latency_ms, crit.cost)
-    except KeyError:
-        pass
     for name, lat, cost in (
         ("stress_latency_viable", policy.stress_latency_ms, crit.cost),
         ("stress_cost_viable", crit.latency_ms, policy.stress_cost),

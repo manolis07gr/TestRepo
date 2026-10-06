@@ -1,0 +1,21 @@
+{
+  "series": {
+    "ticker": "KXBTCD",
+    "frequency": "hourly",
+    "title": "Bitcoin price Above/below",
+    "category": "Crypto",
+    "tags": [
+      "BTC"
+    ],
+    "settlement_sources": [
+      {
+        "name": "CF Benchmarks",
+        "url": "https://www.cfbenchmarks.com/data/indices/BRTI"
+      }
+    ],
+    "contract_url": "https://kalshi-public-docs.s3.amazonaws.com/contract_terms/CRYPTO.pdf",
+    "fee_type": "quadratic",
+    "fee_multiplier": 1,
+    "additional_prohibitions": []
+  }
+}

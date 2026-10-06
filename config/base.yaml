@@ -57,8 +57,8 @@ storage:
 venues:
   kalshi:
     enabled: true
-    rest_url: https://api.elections.kalshi.com/trade-api/v2
-    ws_url: wss://api.elections.kalshi.com/trade-api/ws/v2
+    rest_url: https://external-api.kalshi.com/trade-api/v2   # api.elections.kalshi.com also supported
+    ws_url: wss://external-api-ws.kalshi.com/trade-api/ws/v2
     fee_schedule: kalshi-standard
     series: [KXBTCD, KXBTC, KXETHD, KXETH]
     rate_limit_per_s: 8
@@ -69,7 +69,9 @@ venues:
     enabled: true
     rest_url: https://clob.polymarket.com
     ws_url: wss://ws-subscriptions-clob.polymarket.com/ws/market
-    fee_schedule: polymarket-no-fee
+    fee_schedule: polymarket-crypto-taker   # crypto markets pay 0.07*C*p*(1-p) taker fees
+    series: []          # Gamma event slugs to discover (e.g. bitcoin-above-on-october-7)
+    instruments: []     # or explicit CLOB token ids
     rate_limit_per_s: 5
   coinbase:
     enabled: true

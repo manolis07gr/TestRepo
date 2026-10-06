@@ -60,6 +60,7 @@ from cma.domain.time import NS_PER_MS, NS_PER_S, iso_from_ns
 
 SECONDS_PER_YEAR = 365.25 * 24 * 3600
 REFERENCE_NATIVE = "BTC-USD"
+VOL_NATIVE = "BTC-DVOL"
 
 
 @dataclass(frozen=True)
@@ -105,6 +106,11 @@ class SyntheticMarketConfig:
     competitor_latency_ms: float | None = 120.0
     competitor_min_edge: float = 0.02
     competitor_vol: float | None = None
+    # implied-volatility index feed (DVOL-like): true regime vol with relative noise
+    iv_feed: bool = True
+    iv_noise_rel: float = 0.03
+    iv_update_s: float = 5.0
+    iv_feed_delay_ms: float = 100.0
     mapping_status: MappingStatus = MappingStatus.REVIEWED
 
     def label(self) -> str:
@@ -123,6 +129,14 @@ class SyntheticMarket:
     reference_instrument: str
     truth: dict[str, NDArray[np.float64]] = field(default_factory=dict)
     stats: dict[str, int] = field(default_factory=dict)
+    vol_instrument: str | None = None
+
+    @property
+    def reference_instruments(self) -> frozenset[str]:
+        refs = {self.reference_instrument}
+        if self.vol_instrument is not None:
+            refs.add(self.vol_instrument)
+        return frozenset(refs)
 
 
 # ----------------------------------------------------------------------------- helpers
@@ -136,7 +150,7 @@ def _monotone_recv(
     return np.maximum.accumulate(recv) if recv.size else recv
 
 
-def _fair_on_grid(
+def _fair_on_grid(  # noqa: PLR0917 - vectorised kernel over parallel arrays
     s: NDArray[np.float64],
     prefix: NDArray[np.float64],
     t_ns: NDArray[np.int64],
@@ -161,7 +175,7 @@ def _fair_on_grid(
     inside = ~before
     if np.any(inside):
         r = np.maximum(t_end[inside], 0.0)
-        k_start = int(round(((expiry_ns - window_s * NS_PER_S) - t_ns[0]) / (dt_s * NS_PER_S)))
+        k_start = int(round(((expiry_ns - window_s * NS_PER_S) - t_ns[0]) / (dt_s * NS_PER_S)))  # noqa: RUF046
         k_start = max(k_start, 0)
         k_now = k_idx[inside]
         integral = (prefix[k_now + 1] - prefix[k_start]) * dt_s
@@ -245,6 +259,30 @@ def generate_market(cfg: SyntheticMarketConfig) -> SyntheticMarket:
                 quality_flags=frozenset({QualityFlag.TOP_OF_BOOK_ONLY}),
             )
         )
+
+    # --- implied-volatility index (DVOL-like), percent units
+    vol_inst: str | None = None
+    if cfg.iv_feed:
+        vol_inst = instrument_key(Venue.DERIBIT, VOL_NATIVE)
+        step = max(1, int(cfg.iv_update_s / dt_s))
+        ks_iv = np.arange(0, n, step, dtype=np.int64)
+        noise = 1.0 + cfg.iv_noise_rel * rng.standard_normal(ks_iv.size)
+        iv_src = t_ns[ks_iv]
+        iv_recv = iv_src + int(cfg.iv_feed_delay_ms * NS_PER_MS)
+        for j, k in enumerate(ks_iv):
+            events.append(
+                TradeEvent(
+                    venue=Venue.DERIBIT,
+                    instrument_id=vol_inst,
+                    source_ts_ns=int(iv_src[j]),
+                    recv_ts_ns=int(iv_recv[j]),
+                    payload_hash=f"syn-iv-{cfg.seed}-{j}",
+                    price=Decimal(f"{sigma[k] * noise[j] * 100:.2f}"),
+                    size=Decimal(1),
+                    aggressor_side=None,
+                    trade_id=f"iv-{j}",
+                )
+            )
 
     # --- prediction-venue ladder
     tick = Decimal(cfg.tick)
@@ -377,6 +415,7 @@ def generate_market(cfg: SyntheticMarketConfig) -> SyntheticMarket:
         reference_instrument=ref_inst,
         truth=truth,
         stats=stats,
+        vol_instrument=vol_inst,
     )
 
 
@@ -418,14 +457,14 @@ def _simulate_contract(
     dn = np.floor(x + m)
     cand = np.nonzero((up[1:] != up[:-1]) | (dn[1:] != dn[:-1]))[0] + 1
     units = np.empty(ks.size, dtype=np.int64)
-    u = int(math.floor(x[0]))
+    u = math.floor(x[0])
     change_points = [0]
     last = 0
     for i in cand:
         xi = x[i]
         if xi < u - m or xi >= u + 1 + m:
             units[last:i] = u
-            u = int(math.floor(xi))
+            u = math.floor(xi)
             change_points.append(int(i))
             last = int(i)
     units[last:] = u
@@ -605,11 +644,11 @@ def _simulate_contract(
                     if level is None:
                         break
                     price, avail = level
-                    p = float(price)
+                    px_f = float(price)
                     unit_fee = float(
                         fee.fee_per_contract(price=price, role=LiquidityRole.TAKER)  # type: ignore[attr-defined]
                     )
-                    edge = (fair - p) if buy else (p - fair)
+                    edge = (fair - px_f) if buy else (px_f - fair)
                     if edge - unit_fee < cfg.competitor_min_edge:
                         break
                     emit_trade(ts, price, avail, Side.BUY if buy else Side.SELL)

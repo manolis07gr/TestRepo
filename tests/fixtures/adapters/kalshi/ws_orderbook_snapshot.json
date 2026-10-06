@@ -1,0 +1,1 @@
+{"type":"orderbook_snapshot","sid":2,"seq":1,"msg":{"market_ticker":"KXBTCD-26OCT0617-T110999.99","market_id":"9b0f6b43-5b68-4f6f-8c38-6e9f0a1f1c55","yes_dollars_fp":[["0.4300","500.00"],["0.4400","120.00"],["0.4500","35.50"]],"no_dollars_fp":[["0.5100","250.00"],["0.5300","80.00"]]},"sending_ts_ms":1791318600005}

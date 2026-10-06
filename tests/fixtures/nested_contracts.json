@@ -1,0 +1,444 @@
+{
+  "contracts": [
+    {
+      "can_close_early": false,
+      "close_ts": "2026-10-06T21:00:00.000000000Z",
+      "contract_id": "KALSHI:KXBTCD-26OCT0617-T109999.99",
+      "event_id": "KXBTCD-26OCT0617",
+      "native_id": "KXBTCD-26OCT0617-T109999.99",
+      "no_semantics": "At or below 109999.99",
+      "open_ts": "2026-10-06T17:00:00.000000000Z",
+      "resolve_ts": null,
+      "rules_text": "If the simple average of the sixty seconds of CF Benchmarks' Bitcoin Real-Time Index (BRTI) before 5 PM EDT is above 109999.99 at 5 PM EDT on Oct 6, 2026, then the market resolves to Yes.",
+      "series_id": "KXBTCD",
+      "settlement_metadata": {
+        "floor_strike": 109999.99,
+        "strike_type": "greater"
+      },
+      "status": "OPEN",
+      "tick_size": "0.01",
+      "title": "Bitcoin price today at 5pm EDT?",
+      "venue": "KALSHI",
+      "yes_semantics": "Above 109999.99"
+    },
+    {
+      "can_close_early": false,
+      "close_ts": "2026-10-06T21:00:00.000000000Z",
+      "contract_id": "KALSHI:KXBTCD-26OCT0617-T110999.99",
+      "event_id": "KXBTCD-26OCT0617",
+      "native_id": "KXBTCD-26OCT0617-T110999.99",
+      "no_semantics": "At or below 110999.99",
+      "open_ts": "2026-10-06T17:00:00.000000000Z",
+      "resolve_ts": null,
+      "rules_text": "If the simple average of the sixty seconds of CF Benchmarks' Bitcoin Real-Time Index (BRTI) before 5 PM EDT is above 110999.99 at 5 PM EDT on Oct 6, 2026, then the market resolves to Yes.",
+      "series_id": "KXBTCD",
+      "settlement_metadata": {
+        "floor_strike": 110999.99,
+        "strike_type": "greater"
+      },
+      "status": "OPEN",
+      "tick_size": "0.01",
+      "title": "Bitcoin price today at 5pm EDT?",
+      "venue": "KALSHI",
+      "yes_semantics": "Above 110999.99"
+    },
+    {
+      "can_close_early": false,
+      "close_ts": "2026-10-06T21:00:00.000000000Z",
+      "contract_id": "KALSHI:KXBTCD-26OCT0617-T111999.99",
+      "event_id": "KXBTCD-26OCT0617",
+      "native_id": "KXBTCD-26OCT0617-T111999.99",
+      "no_semantics": "At or below 111999.99",
+      "open_ts": "2026-10-06T17:00:00.000000000Z",
+      "resolve_ts": null,
+      "rules_text": "If the simple average of the sixty seconds of CF Benchmarks' Bitcoin Real-Time Index (BRTI) before 5 PM EDT is above 111999.99 at 5 PM EDT on Oct 6, 2026, then the market resolves to Yes.",
+      "series_id": "KXBTCD",
+      "settlement_metadata": {
+        "floor_strike": 111999.99,
+        "strike_type": "greater"
+      },
+      "status": "OPEN",
+      "tick_size": "0.01",
+      "title": "Bitcoin price today at 5pm EDT?",
+      "venue": "KALSHI",
+      "yes_semantics": "Above 111999.99"
+    }
+  ],
+  "description": "KXBTCD-style 'X > K' family (BRTI 60 s average before 2026-10-06 17:00 ET = 21:00Z) with three strikes; one known structural violation in scenario 'violation' (buy YES 109999.99 at its ask 0.71, sell YES 110999.99 at its bid 0.78).",
+  "fee_model": {
+    "formula": "fee = ceil_to_cent(0.07 * C * P * (1 - P)), P = canonical YES price",
+    "model": "quadratic",
+    "rounding": "ceil to 0.01 per single-fill order",
+    "taker_rate": "0.07",
+    "venue_schedule_id": "kalshi-standard"
+  },
+  "generator": "scripts/fixtures/gen_mapping_structural.py",
+  "mappings": [
+    {
+      "contract_id": "KALSHI:KXBTCD-26OCT0617-T109999.99",
+      "early_close_rule": "NO_EARLY_CLOSE;MISSING_INDEX_DATA_RESOLVES_NO",
+      "event_family": "BTC-USD|AVG_60S_BEFORE|2026-10-06T21:00:00.000000000Z",
+      "notes": "fixture mapping (hand-written)",
+      "observation_end": "2026-10-06T21:00:00.000000000Z",
+      "observation_method": "AVG_60S_BEFORE",
+      "observation_start": "2026-10-06T20:59:00.000000000Z",
+      "operator": "GT",
+      "outcome_semantics": "YES iff the 60 s simple average of BRTI before 2026-10-06 17:00 ET > 109999.99",
+      "resolution_source": "CF_BENCHMARKS_BRTI",
+      "rounding_rule": "NONE",
+      "strikes": [
+        "109999.99"
+      ],
+      "timezone": "America/New_York",
+      "underlyings": [
+        "BTC-USD"
+      ],
+      "venue": "KALSHI"
+    },
+    {
+      "contract_id": "KALSHI:KXBTCD-26OCT0617-T110999.99",
+      "early_close_rule": "NO_EARLY_CLOSE;MISSING_INDEX_DATA_RESOLVES_NO",
+      "event_family": "BTC-USD|AVG_60S_BEFORE|2026-10-06T21:00:00.000000000Z",
+      "notes": "fixture mapping (hand-written)",
+      "observation_end": "2026-10-06T21:00:00.000000000Z",
+      "observation_method": "AVG_60S_BEFORE",
+      "observation_start": "2026-10-06T20:59:00.000000000Z",
+      "operator": "GT",
+      "outcome_semantics": "YES iff the 60 s simple average of BRTI before 2026-10-06 17:00 ET > 110999.99",
+      "resolution_source": "CF_BENCHMARKS_BRTI",
+      "rounding_rule": "NONE",
+      "strikes": [
+        "110999.99"
+      ],
+      "timezone": "America/New_York",
+      "underlyings": [
+        "BTC-USD"
+      ],
+      "venue": "KALSHI"
+    },
+    {
+      "contract_id": "KALSHI:KXBTCD-26OCT0617-T111999.99",
+      "early_close_rule": "NO_EARLY_CLOSE;MISSING_INDEX_DATA_RESOLVES_NO",
+      "event_family": "BTC-USD|AVG_60S_BEFORE|2026-10-06T21:00:00.000000000Z",
+      "notes": "fixture mapping (hand-written)",
+      "observation_end": "2026-10-06T21:00:00.000000000Z",
+      "observation_method": "AVG_60S_BEFORE",
+      "observation_start": "2026-10-06T20:59:00.000000000Z",
+      "operator": "GT",
+      "outcome_semantics": "YES iff the 60 s simple average of BRTI before 2026-10-06 17:00 ET > 111999.99",
+      "resolution_source": "CF_BENCHMARKS_BRTI",
+      "rounding_rule": "NONE",
+      "strikes": [
+        "111999.99"
+      ],
+      "timezone": "America/New_York",
+      "underlyings": [
+        "BTC-USD"
+      ],
+      "venue": "KALSHI"
+    }
+  ],
+  "scenarios": [
+    {
+      "books": {
+        "KALSHI:KXBTCD-26OCT0617-T109999.99": {
+          "asks": [
+            [
+              "0.71",
+              "120"
+            ],
+            [
+              "0.72",
+              "200"
+            ]
+          ],
+          "bids": [
+            [
+              "0.69",
+              "200"
+            ],
+            [
+              "0.68",
+              "300"
+            ]
+          ],
+          "recv_ts": "2026-10-06T20:00:00.000000000Z",
+          "source_ts": "2026-10-06T20:00:00.000000000Z"
+        },
+        "KALSHI:KXBTCD-26OCT0617-T110999.99": {
+          "asks": [
+            [
+              "0.80",
+              "90"
+            ],
+            [
+              "0.81",
+              "50"
+            ]
+          ],
+          "bids": [
+            [
+              "0.78",
+              "80"
+            ],
+            [
+              "0.74",
+              "100"
+            ]
+          ],
+          "recv_ts": "2026-10-06T20:00:00.000000000Z",
+          "source_ts": "2026-10-06T20:00:00.000000000Z"
+        },
+        "KALSHI:KXBTCD-26OCT0617-T111999.99": {
+          "asks": [
+            [
+              "0.31",
+              "100"
+            ],
+            [
+              "0.32",
+              "120"
+            ]
+          ],
+          "bids": [
+            [
+              "0.29",
+              "100"
+            ],
+            [
+              "0.28",
+              "150"
+            ]
+          ],
+          "recv_ts": "2026-10-06T20:00:00.000000000Z",
+          "source_ts": "2026-10-06T20:00:00.000000000Z"
+        }
+      },
+      "config": {
+        "tolerance": "0.005",
+        "walk_levels": false
+      },
+      "expected": [
+        {
+          "fees_per_unit": "0.026625",
+          "gross_edge_per_unit": "0.07",
+          "gross_profit": "5.60",
+          "kind": "NESTED_THRESHOLD",
+          "legs": [
+            {
+              "contract_id": "KALSHI:KXBTCD-26OCT0617-T109999.99",
+              "fee": "1.16",
+              "price": "0.71",
+              "quantity": "80",
+              "side": "BUY"
+            },
+            {
+              "contract_id": "KALSHI:KXBTCD-26OCT0617-T110999.99",
+              "fee": "0.97",
+              "price": "0.78",
+              "quantity": "80",
+              "side": "SELL"
+            }
+          ],
+          "net_edge_per_unit": "0.043375",
+          "net_profit": "3.47",
+          "quantity": "80",
+          "total_fees": "2.13"
+        }
+      ],
+      "name": "violation"
+    },
+    {
+      "books": {
+        "KALSHI:KXBTCD-26OCT0617-T109999.99": {
+          "asks": [
+            [
+              "0.71",
+              "120"
+            ],
+            [
+              "0.72",
+              "200"
+            ]
+          ],
+          "bids": [
+            [
+              "0.69",
+              "200"
+            ],
+            [
+              "0.68",
+              "300"
+            ]
+          ],
+          "recv_ts": "2026-10-06T20:00:00.000000000Z",
+          "source_ts": "2026-10-06T20:00:00.000000000Z"
+        },
+        "KALSHI:KXBTCD-26OCT0617-T110999.99": {
+          "asks": [
+            [
+              "0.80",
+              "90"
+            ],
+            [
+              "0.81",
+              "50"
+            ]
+          ],
+          "bids": [
+            [
+              "0.78",
+              "80"
+            ],
+            [
+              "0.74",
+              "100"
+            ]
+          ],
+          "recv_ts": "2026-10-06T20:00:00.000000000Z",
+          "source_ts": "2026-10-06T20:00:00.000000000Z"
+        },
+        "KALSHI:KXBTCD-26OCT0617-T111999.99": {
+          "asks": [
+            [
+              "0.31",
+              "100"
+            ],
+            [
+              "0.32",
+              "120"
+            ]
+          ],
+          "bids": [
+            [
+              "0.29",
+              "100"
+            ],
+            [
+              "0.28",
+              "150"
+            ]
+          ],
+          "recv_ts": "2026-10-06T20:00:00.000000000Z",
+          "source_ts": "2026-10-06T20:00:00.000000000Z"
+        }
+      },
+      "config": {
+        "tolerance": "0",
+        "walk_levels": true
+      },
+      "expected": [
+        {
+          "gross_profit": "6.80",
+          "kind": "NESTED_THRESHOLD",
+          "legs": [
+            {
+              "contract_id": "KALSHI:KXBTCD-26OCT0617-T109999.99",
+              "fee": "1.73",
+              "price": "0.71",
+              "quantity": "120",
+              "side": "BUY"
+            },
+            {
+              "contract_id": "KALSHI:KXBTCD-26OCT0617-T110999.99",
+              "fee": "0.97",
+              "price": "0.78",
+              "quantity": "80",
+              "side": "SELL"
+            },
+            {
+              "contract_id": "KALSHI:KXBTCD-26OCT0617-T110999.99",
+              "fee": "0.54",
+              "price": "0.74",
+              "quantity": "40",
+              "side": "SELL"
+            }
+          ],
+          "net_profit": "3.56",
+          "quantity": "120",
+          "total_fees": "3.24"
+        }
+      ],
+      "name": "violation_walk_levels"
+    },
+    {
+      "books": {
+        "KALSHI:KXBTCD-26OCT0617-T109999.99": {
+          "asks": [
+            [
+              "0.71",
+              "120"
+            ],
+            [
+              "0.72",
+              "200"
+            ]
+          ],
+          "bids": [
+            [
+              "0.69",
+              "200"
+            ],
+            [
+              "0.68",
+              "300"
+            ]
+          ],
+          "recv_ts": "2026-10-06T20:00:00.000000000Z",
+          "source_ts": "2026-10-06T20:00:00.000000000Z"
+        },
+        "KALSHI:KXBTCD-26OCT0617-T110999.99": {
+          "asks": [
+            [
+              "0.80",
+              "90"
+            ]
+          ],
+          "bids": [
+            [
+              "0.72",
+              "80"
+            ],
+            [
+              "0.70",
+              "100"
+            ]
+          ],
+          "recv_ts": "2026-10-06T20:00:00.000000000Z",
+          "source_ts": "2026-10-06T20:00:00.000000000Z"
+        },
+        "KALSHI:KXBTCD-26OCT0617-T111999.99": {
+          "asks": [
+            [
+              "0.31",
+              "100"
+            ],
+            [
+              "0.32",
+              "120"
+            ]
+          ],
+          "bids": [
+            [
+              "0.29",
+              "100"
+            ],
+            [
+              "0.28",
+              "150"
+            ]
+          ],
+          "recv_ts": "2026-10-06T20:00:00.000000000Z",
+          "source_ts": "2026-10-06T20:00:00.000000000Z"
+        }
+      },
+      "config": {
+        "tolerance": "0",
+        "walk_levels": false
+      },
+      "expected": [],
+      "name": "fee_absorbed"
+    }
+  ],
+  "schema": "cma.fixture.nested_contracts/v1"
+}

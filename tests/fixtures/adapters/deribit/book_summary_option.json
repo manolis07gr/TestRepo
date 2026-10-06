@@ -1,0 +1,68 @@
+{
+  "jsonrpc": "2.0",
+  "result": [
+    {
+      "volume_usd": 152034.5,
+      "volume": 41.3,
+      "underlying_price": 110621.42,
+      "underlying_index": "BTC-27DEC24",
+      "quote_currency": "BTC",
+      "price_change": -4.1667,
+      "open_interest": 1240.5,
+      "mid_price": 0.0525,
+      "mark_price": 0.05262,
+      "mark_iv": 52.31,
+      "low": 0.049,
+      "last": 0.0515,
+      "interest_rate": 0.0,
+      "instrument_name": "BTC-27DEC24-100000-C",
+      "high": 0.0565,
+      "estimated_delivery_price": 110598.03,
+      "creation_timestamp": 1791318600123,
+      "bid_price": 0.052,
+      "base_currency": "BTC",
+      "ask_price": 0.053
+    },
+    {
+      "volume": 0.0,
+      "underlying_price": 110433.9,
+      "underlying_index": "BTC-5JUL24",
+      "quote_currency": "BTC",
+      "open_interest": 15.0,
+      "mid_price": null,
+      "mark_price": 0.0012,
+      "mark_iv": 61.5,
+      "interest_rate": 0.0,
+      "instrument_name": "BTC-5JUL24-90000-P",
+      "creation_timestamp": 1791318600123,
+      "bid_price": null,
+      "base_currency": "BTC",
+      "ask_price": 0.0015
+    },
+    {
+      "volume": 1200.0,
+      "underlying_price": 2.3871,
+      "underlying_index": "XRP_USDC-30AUG24",
+      "quote_currency": "USDC",
+      "open_interest": 52000.0,
+      "mid_price": 0.0185,
+      "mark_price": 0.0186,
+      "mark_iv": 88.2,
+      "interest_rate": 0.0,
+      "instrument_name": "XRP_USDC-30AUG24-0d625-C",
+      "creation_timestamp": 1791318600123,
+      "bid_price": 0.018,
+      "base_currency": "XRP",
+      "ask_price": 0.019
+    },
+    {
+      "instrument_name": "BTC-PERPETUAL",
+      "creation_timestamp": 1791318600123,
+      "mark_price": 110600.5
+    }
+  ],
+  "usIn": 1791318600122001,
+  "usOut": 1791318600123456,
+  "usDiff": 1455,
+  "testnet": false
+}

@@ -1,0 +1,1 @@
+{"type":"orderbook_delta","sid":2,"seq":3,"msg":{"market_ticker":"KXBTCD-26OCT0617-T110999.99","market_id":"9b0f6b43-5b68-4f6f-8c38-6e9f0a1f1c55","price_dollars":"0.5300","delta_fp":"20.00","side":"no","ts_ms":1791318600400}}

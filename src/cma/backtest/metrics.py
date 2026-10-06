@@ -54,6 +54,9 @@ class TradingMetrics:
     time_in_market_frac: float
     tail_loss_cvar5: float
     markout_bps: dict[str, float] = field(default_factory=dict)
+    markout_net_pnl: dict[str, float] = field(default_factory=dict)  # fee-adjusted, $
+    markout_net_c_per_contract: dict[str, float] = field(default_factory=dict)
+    markout_coverage: dict[str, float] = field(default_factory=dict)
     latency_ms: dict[str, float] = field(default_factory=dict)
     concentration: dict[str, Any] = field(default_factory=dict)
     risk_rejections: dict[str, int] = field(default_factory=dict)
@@ -125,6 +128,35 @@ def markouts_bps(records: CoreRecords, horizons: Sequence[int]) -> dict[str, flo
     return out
 
 
+def markout_pnl(
+    records: CoreRecords, horizons: Sequence[int]
+) -> tuple[dict[str, float], dict[str, float], dict[str, float]]:
+    """Fee-adjusted mark-out P&L per horizon: sum side*(mid_h - price)*qty - fee.
+
+    Returns ($ totals, cents per contract, share of filled contracts with a mark). Fills
+    whose contract closed before the horizon have no mark and are excluded (coverage).
+    """
+    totals: dict[str, float] = {}
+    per_c: dict[str, float] = {}
+    cover: dict[str, float] = {}
+    all_qty = sum(_f(f.quantity) for f in records.fills)
+    for h in horizons:
+        pnl = 0.0
+        qty = 0.0
+        for f in records.fills:
+            mid = records.markouts.get((f.fill_id, h))
+            if mid is None:
+                continue
+            sign = 1 if f.side is Side.BUY else -1
+            pnl += sign * _f(mid - f.price) * _f(f.quantity) - _f(f.fee)
+            qty += _f(f.quantity)
+        key = f"{h}ms"
+        totals[key] = pnl
+        per_c[key] = 100 * pnl / qty if qty else float("nan")
+        cover[key] = qty / all_qty if all_qty else 0.0
+    return totals, per_c, cover
+
+
 def concentration(
     pnls: Mapping[str, float], fills: Sequence[Fill], family_of: Any
 ) -> dict[str, Any]:
@@ -153,9 +185,8 @@ def concentration(
     }
 
 
-def compute_metrics(
-    core: TradingCore, horizons_ms: Sequence[int] = (1_000, 5_000, 30_000)
-) -> TradingMetrics:
+def compute_metrics(core: TradingCore, horizons_ms: Sequence[int] | None = None) -> TradingMetrics:
+    horizons_ms = tuple(horizons_ms or core.markout_horizons_ms)
     rec = core.records
     pf = core.portfolio
     fees = _f(pf.fees_total)
@@ -199,6 +230,7 @@ def compute_metrics(
         held = sum(1 for p in rec.equity if p.open_risk > 0)
         tim = held / len(rec.equity) if span > 0 else 0.0
     lat = [(o.arrival_ts_ns - o.decision_ts_ns) / 1e6 for o in rec.orders]
+    mo_pnl, mo_c, mo_cov = markout_pnl(rec, horizons_ms)
     return TradingMetrics(
         gross_pnl=gross,
         fees=fees,
@@ -224,6 +256,9 @@ def compute_metrics(
         time_in_market_frac=tim,
         tail_loss_cvar5=cvar(vals),
         markout_bps=markouts_bps(rec, horizons_ms),
+        markout_net_pnl=mo_pnl,
+        markout_net_c_per_contract=mo_c,
+        markout_coverage=mo_cov,
         latency_ms={
             "decision_to_arrival_p50": float(np.median(lat)) if lat else float("nan"),
             "decision_to_arrival_max": float(np.max(lat)) if lat else float("nan"),

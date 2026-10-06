@@ -16,7 +16,7 @@ from dataclasses import dataclass, field
 from decimal import Decimal
 from enum import StrEnum
 
-from cma.domain.enums import BookSide, DeltaMode, QualityFlag, Venue
+from cma.domain.enums import BLOCKING_QUALITY_FLAGS, BookSide, DeltaMode, QualityFlag, Venue
 from cma.domain.models import (
     BookDeltaEvent,
     BookLevel,
@@ -102,7 +102,8 @@ class L2BookBuilder:
         self._asks = {lvl.price: lvl.quantity for lvl in event.asks if lvl.quantity > ZERO}
         self.last_sequence = event.sequence
         self._touch(event)
-        self._flags = set()
+        # informational flags (TOP_OF_BOOK_ONLY, SOURCE_TS_MISSING, ...) carry through
+        self._flags = {f for f in event.quality_flags if f not in BLOCKING_QUALITY_FLAGS}
         self.state = BookState.VALID
         self.counters.snapshots += 1
         for lvl in (*event.bids, *event.asks):
@@ -111,9 +112,12 @@ class L2BookBuilder:
         if self.buffer_while_awaiting and self._buffer:
             pending, self._buffer = self._buffer, []
             for delta in sorted(pending, key=lambda d: d.sequence or 0):
-                if delta.sequence is not None and event.sequence is not None:
-                    if delta.sequence <= event.sequence:
-                        continue
+                if (
+                    delta.sequence is not None
+                    and event.sequence is not None
+                    and delta.sequence <= event.sequence
+                ):
+                    continue
                 self.apply_delta(delta)
         return ApplyResult(applied=True, reason="snapshot")
 
@@ -147,8 +151,7 @@ class L2BookBuilder:
             self.last_sequence = seq
         self._touch(event)
         self.counters.deltas_applied += 1
-        self._check_crossed()
-        if self.state is not BookState.VALID:
+        if self._check_crossed():
             return ApplyResult(applied=True, reason="crossed", needs_snapshot=True)
         return ApplyResult(applied=True, reason="delta")
 
@@ -244,21 +247,24 @@ class L2BookBuilder:
             self.counters.off_tick += 1
             self._flags.add(QualityFlag.OFF_TICK)
 
-    def _check_crossed(self) -> None:
+    def _check_crossed(self) -> bool:
+        """Flag crossed/locked states; returns True when the book was invalidated."""
         bb, ba = self.best_bid(), self.best_ask()
         self._flags.discard(QualityFlag.LOCKED)
         if bb is None or ba is None:
             self._flags.discard(QualityFlag.CROSSED)
-            return
+            return False
         if bb[0] > ba[0]:
             self.counters.crossed += 1
             self._flags.add(QualityFlag.CROSSED)
             if self.crossed_policy == "invalidate":
                 self.state = BookState.INVALID
+                return True
         elif bb[0] == ba[0]:
             self._flags.add(QualityFlag.LOCKED)
         elif self.crossed_policy == "flag":
             self._flags.discard(QualityFlag.CROSSED)
+        return False
 
 
 @dataclass

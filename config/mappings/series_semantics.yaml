@@ -1,0 +1,210 @@
+# Series / market-template semantics consumed by cma.mapping.parsers.
+#
+# Parser output is ALWAYS a DRAFT mapping that a human must review (scope s.9). Rows marked
+# `verified: true` were checked against the venue's contract terms / rules on `verified_on`
+# (source in `source_url`) but venue rules change: re-check against the current contract
+# rules at runtime and during every mapping review. `verified: false` rows are best-effort
+# assumptions that MUST be checked against current contract rules before any review.
+#
+# `auto_parse: false` rows are documented here but the parser refuses them (returns None
+# with a reason) because their observation semantics are not established deterministically.
+schema: cma.series_semantics/v1
+
+kalshi_series:
+  KXBTCD:
+    description: Bitcoin price at a stated ET hour - hourly above/below threshold ladder
+    underlying: BTC-USD
+    resolution_source: CF_BENCHMARKS_BRTI
+    observation_method: AVG_60S_BEFORE
+    timezone: America/New_York
+    rounding_rule: NONE
+    early_close_rule: NO_EARLY_CLOSE;MISSING_INDEX_DATA_RESOLVES_NO
+    rules_keywords: [CF Benchmarks]
+    auto_parse: true
+    verified: true
+    verified_on: '2026-10-06'
+    source_url: https://kalshi-public-docs.s3.amazonaws.com/contract_terms/BTC.pdf
+    verification_note: verified 2026-10-06 from contract terms; re-check at runtime
+    note: >-
+      Value = simple average of the CF Benchmarks Bitcoin Real-Time Index (BRTI) over the
+      60 seconds before the stated time (window [t-60s, t)). Event ticker
+      <SERIES>-<YY><MON><DD><HH> gives the stated date and ET hour; markets append
+      -T<strike> with strike_type greater ("above" = strictly greater). BRTI constituents
+      (Coinbase, Kraken, Bitstamp, Gemini, itBit, LMAX) exclude Binance. Missing/incomplete
+      index data resolves affected strikes No. Last trading time = the stated time.
+  KXBTC:
+    description: Bitcoin price range buckets at a stated ET hour
+    underlying: BTC-USD
+    resolution_source: CF_BENCHMARKS_BRTI
+    observation_method: AVG_60S_BEFORE
+    timezone: America/New_York
+    rounding_rule: NONE
+    early_close_rule: NO_EARLY_CLOSE;MISSING_INDEX_DATA_RESOLVES_NO
+    rules_keywords: [CF Benchmarks]
+    auto_parse: true
+    verified: true
+    verified_on: '2026-10-06'
+    source_url: https://kalshi-public-docs.s3.amazonaws.com/contract_terms/BTC.pdf
+    verification_note: verified 2026-10-06 from contract terms; re-check at runtime
+    note: >-
+      Same BRTI 60-second average as KXBTCD. Range markets use strike_type between, which
+      is INCLUSIVE at both ends (floor <= X <= cap); tail markets use less/greater.
+      Missing/incomplete index data resolves affected strikes No.
+  KXETHD:
+    description: Ether price at a stated ET hour - hourly above/below threshold ladder
+    underlying: ETH-USD
+    resolution_source: CF_BENCHMARKS_ETHUSD_RTI
+    observation_method: AVG_60S_BEFORE
+    timezone: America/New_York
+    rounding_rule: NONE
+    early_close_rule: NO_EARLY_CLOSE;MISSING_INDEX_DATA_RESOLVES_NO
+    rules_keywords: [CF Benchmarks]
+    auto_parse: true
+    verified: true
+    verified_on: '2026-10-06'
+    source_url: https://kalshi-public-docs.s3.amazonaws.com/contract_terms/ETH.pdf
+    verification_note: verified 2026-10-06 from contract terms; re-check at runtime
+    note: >-
+      Value = simple average of the CF Benchmarks Ether-Dollar Real-Time Index (ETHUSD_RTI)
+      over the 60 seconds before the stated time. "above" = strictly greater; "at least" =
+      greater_or_equal. Missing/incomplete index data resolves affected strikes No.
+  KXETH:
+    description: Ether price markets (probably range buckets) at a stated ET hour
+    underlying: ETH-USD
+    resolution_source: CF_BENCHMARKS_ETHUSD_RTI
+    observation_method: AVG_60S_BEFORE
+    timezone: America/New_York
+    rounding_rule: NONE
+    early_close_rule: NO_EARLY_CLOSE;MISSING_INDEX_DATA_RESOLVES_NO
+    rules_keywords: [CF Benchmarks]
+    auto_parse: true
+    verified: false
+    verified_on: null
+    source_url: https://kalshi-public-docs.s3.amazonaws.com/contract_terms/ETH.pdf
+    verification_note: >-
+      UNVERIFIED - series layout assumed by analogy with KXBTC; must be checked against the
+      current contract rules before review.
+    note: >-
+      Payoff operator/strikes come from each market's strike_type/floor/cap metadata; the
+      ETHUSD_RTI 60-second average follows the ETH contract terms.
+  KXBTC15M:
+    description: Bitcoin 15-minute up/down
+    underlying: BTC-USD
+    resolution_source: CF_BENCHMARKS_BRTI
+    observation_method: AVG_60S_BEFORE
+    timezone: America/New_York
+    rounding_rule: UNSPECIFIED
+    early_close_rule: UNSPECIFIED
+    rules_keywords: [CF Benchmarks]
+    auto_parse: false
+    verified: false
+    verified_on: null
+    source_url: https://kalshi-public-docs.s3.amazonaws.com/contract_terms/CRYPTO15M.pdf
+    verification_note: UNVERIFIED - must be checked against current contract rules.
+    note: >-
+      floor_strike is the target price, likely the 60 s BRTI average before the window
+      opens (UNVERIFIED); ticker time semantics (window start vs end) are not established,
+      so the parser refuses these markets.
+  KXETH15M:
+    description: Ether 15-minute up/down
+    underlying: ETH-USD
+    resolution_source: CF_BENCHMARKS_ETHUSD_RTI
+    observation_method: AVG_60S_BEFORE
+    timezone: America/New_York
+    rounding_rule: UNSPECIFIED
+    early_close_rule: UNSPECIFIED
+    rules_keywords: [CF Benchmarks]
+    auto_parse: false
+    verified: false
+    verified_on: null
+    source_url: https://kalshi-public-docs.s3.amazonaws.com/contract_terms/CRYPTO15M.pdf
+    verification_note: UNVERIFIED - must be checked against current contract rules.
+    note: See KXBTC15M; the parser refuses these markets.
+
+# Polymarket market templates. The parser additionally requires each market's own rules
+# text to state the source, pair, candle/TWAP and comparison before it proposes anything.
+polymarket_templates:
+  binance_1m_close_threshold:
+    description: >-
+      "Bitcoin above ___ on <date>?" / "Will the price of Bitcoin be above $X on <date>?"
+    market_kind: THRESHOLD
+    source_keyword: binance
+    candle: 1M
+    observation_method: CANDLE_CLOSE_1M
+    timezone: America/New_York
+    rounding_rule: NONE
+    early_close_rule: UNSPECIFIED
+    rule_effective_from: null
+    assets:
+      BTC:
+        underlying: BTCUSDT@BINANCE
+        resolution_source: BINANCE_BTCUSDT_1M_CLOSE
+        pair_keywords: [btcusdt, btc/usdt]
+      ETH:
+        underlying: ETHUSDT@BINANCE
+        resolution_source: BINANCE_ETHUSDT_1M_CLOSE
+        pair_keywords: [ethusdt, eth/usdt]
+    verified: true
+    verified_on: '2026-10-06'
+    source_url: https://docs.polymarket.com (market rules text of each market)
+    verification_note: verified 2026-10-06 from market rules; re-check at runtime
+    note: >-
+      Binance BTC/USDT 1-minute candle for 12:00 ET (noon) on the date: window
+      [12:00:00, 12:01:00) ET, value = its final close; YES iff close is STRICTLY higher
+      than the strike. The fallback when Binance data is unavailable is not parsed, so
+      early_close_rule stays UNSPECIFIED until a reviewer determines it.
+  binance_1h_candle_updown:
+    description: '"Bitcoin Up or Down - <date>, <h>PM ET" (hourly)'
+    market_kind: UPDOWN_HOURLY
+    source_keyword: binance
+    candle: 1H
+    observation_method: CANDLE_OPEN_CLOSE_1H
+    timezone: America/New_York
+    rounding_rule: TIES_RESOLVE_YES
+    early_close_rule: UNSPECIFIED
+    rule_effective_from: null
+    assets:
+      BTC:
+        underlying: BTCUSDT@BINANCE
+        resolution_source: BINANCE_BTCUSDT_1H_CANDLE
+        pair_keywords: [btcusdt, btc/usdt]
+      ETH:
+        underlying: ETHUSDT@BINANCE
+        resolution_source: BINANCE_ETHUSDT_1H_CANDLE
+        pair_keywords: [ethusdt, eth/usdt]
+    verified: true
+    verified_on: '2026-10-06'
+    source_url: https://docs.polymarket.com (market rules text of each market)
+    verification_note: verified 2026-10-06 from market rules; re-check at runtime
+    note: >-
+      Binance BTC/USDT 1-hour candle starting at the titled ET hour; Up iff close >= open
+      (ties resolve Up, encoded as rounding_rule TIES_RESOLVE_YES).
+  chainlink_twap60_updown:
+    description: 5m/15m/4h Up/Down markets, slug {coin}-updown-{5m|15m|4h}-{unix_start}
+    market_kind: UPDOWN_SLUG
+    source_keyword: chainlink
+    candle: null
+    observation_method: TWAP_60S
+    timezone: America/New_York
+    rounding_rule: TIES_RESOLVE_YES
+    early_close_rule: UNSPECIFIED
+    rule_effective_from: '2026-08-07T00:00:00Z'
+    assets:
+      BTC:
+        underlying: BTC-USD@CHAINLINK
+        resolution_source: CHAINLINK_DATA_STREAMS_TWAP60
+        pair_keywords: [chainlink]
+      ETH:
+        underlying: ETH-USD@CHAINLINK
+        resolution_source: CHAINLINK_DATA_STREAMS_TWAP60
+        pair_keywords: [chainlink]
+    verified: true
+    verified_on: '2026-10-06'
+    source_url: https://docs.polymarket.com/market-data/chainlink-twap
+    verification_note: verified 2026-10-06 from venue docs; re-check at runtime
+    note: >-
+      Since 2026-08-07 both the opening price-to-beat and the final price are
+      Chainlink-computed 60-second TWAPs; Up iff end >= start. The exact alignment of each
+      TWAP window around the boundary instants is not encoded; the reviewer must confirm.
+      Daily "Up or Down on <date>" markets (12:00 ET close vs previous day, tie -> 50-50
+      SCALAR) are NOT supported by the parser.

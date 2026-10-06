@@ -16,3 +16,4 @@ data/
 !tests/fixtures/**
 /reports/runs/
 .hypothesis/
+coverage.json
