@@ -4,11 +4,35 @@ Experiment `edge-eval-20261006` · git `3811f8c671f92d121e687b460a80a3cb403d3a66
 
 ## Decision
 
-* **Real markets (Kalshi / Polymarket BTC contracts): `COLLECT_MORE_DATA`.** No real venue data could be collected from this environment (market-data hosts are blocked by its network policy), so no real-market claim is made. The platform is ready to collect and evaluate as soon as access exists (see *Next steps*).
+* **Real markets (Kalshi BTC order books, 1.9 h live): `COLLECT_MORE_DATA`** for the stale-quote taker, by the rule fixed before the run: ≥ 3 bps moves -0.78 ± 0.25¢ per contract at 100 ms after the fee, ±2 SE (72 moves); ≥ 5 bps moves +0.11 ± 0.64¢ per contract at 100 ms after the fee, ±2 SE (9 moves). See *Real-market check* below.
 * Synthetic base case `kalshi_fee`: **`REJECT`** — oos_net_pnl: net P&L -490.20 at base@250ms; CI lower -117.04; stress_latency_viable: net -249.45 at base@1000ms; stress_cost_viable: net -177.92 at fees_x1.5@250ms; parameter_stability: 42% of 12 neighbouring settings profitable
 * Synthetic base case `polymarket_fee_speedbump`: **`REJECT`** — oos_net_pnl: net P&L -509.01 at base@250ms; CI lower -105.47; stress_latency_viable: net -341.21 at base@1000ms; stress_cost_viable: net -200.67 at fees_x1.5@250ms; parameter_stability: 50% of 12 neighbouring settings profitable
 
 The synthetic study answers a narrower question than profitability: *how much quote staleness, competition and latency can a lead-lag taker afford after real venue fees?* It uses the full production pipeline (replay → features → signals → risk → latency-aware execution simulator → accounting) on a calibrated synthetic market with a known ground truth.
+
+## Real-market check: live Kalshi order books
+
+* Window 2026-10-06T14:16:31.919540229Z to 2026-10-06T16:12:36.154993494Z (1.93 h): Kalshi authenticated WebSocket books for 702 of 702 BTC above-strike contracts (top-of-book changes: KXBTC15M 1,150,767, KXBTCD 1,420,237), Coinbase BTC-USD ticker (56,114 updates), 11,724,650 raw messages in all.
+* Volatility input: Deribit DVOL, mean 36% (119 one-minute closes); realised over the window 42%.
+* Coinbase moves of at least 3 / 5 / 10 bps within 1 s (5 s cooldown): 73 / 9 / 0.
+* Kalshi book replay: 10,238,988 deltas and 1,036,373 snapshots applied; 12 gaps in the subscription sequence, 2,331 updates skipped while a book awaited a snapshot, 0 momentarily crossed states skipped; 4 of 702 books invalid at the end.
+* Method: for every move and every contract whose fair value it shifts by at least 1¢ (fair 10–90¢, 90 s to 6 h before close), take the quote a taker would hit as observed L ms after the move (receive time on this machine), value it at Kalshi's own mid 1 s before the move plus the model's change in fair value, and subtract the price and the Kalshi taker fee (10 contracts, rounded up per order).
+
+| move ≥ bps | samples | moves | maker reaction p25 / median / p75 ms | repriced before seen | quote life median ms | 0 ms | 100 ms | 250 ms | 500 ms | 1000 ms |
+|---|---|---|---|---|---|---|---|---|---|---|
+| 3 | 632 | 72 | 0 / 0 / 230 | 0.60 | 647 | -0.93 ± 0.24 | -0.78 ± 0.25 | -0.95 ± 0.24 | -1.06 ± 0.26 | -1.10 ± 0.26 |
+| 5 | 91 | 9 | 0 / 0 / 333 | 0.59 | 374 | -0.06 ± 0.50 | +0.11 ± 0.64 | -0.15 ± 0.71 | -0.30 ± 0.70 | -0.97 ± 1.06 |
+
+Maker reaction: time from seeing the move until Kalshi's mid covered half the model's predicted repricing (0 if it already had). Quote life: time until the quote a taker would hit changed for any reason. Latency cells: mean net ¢ per contract after the fee ± 2 standard errors clustered by move, all series pooled.
+
+* No-news baseline: the same valuation at fixed 10 s times nets -1.45¢ (positive 3% of the time), the cost of crossing half the spread plus the fee without a signal.
+* Valued at the model price alone (no market anchor) the baseline is 1.15¢, positive 62% of the time: level disagreement between model and market, not latency edge.
+* Lead-lag KXBTC15M-26OCT061115-15 (177,282 mid changes): Kalshi moved first (peak at -100 ms); p 0.030, out-of-sample ΔR² -0.021, economic gate failed.
+* Lead-lag KXBTC15M-26OCT061215-15 (173,405 mid changes): Kalshi moved first (peak at -500 ms); p 0.005, out-of-sample ΔR² -0.093, economic gate failed.
+* Lead-lag KXBTC15M-26OCT061145-45 (172,268 mid changes): Kalshi moved first (peak at -500 ms); p 0.005, out-of-sample ΔR² -0.037, economic gate failed.
+* Lead-lag KXBTC15M-26OCT061100-00 (134,730 mid changes): Coinbase led by 100 ms; p 0.005, out-of-sample ΔR² -0.173, economic gate failed.
+* Decision `COLLECT_MORE_DATA` by the rule fixed before the run (≥ 3 bps moves -0.78 ± 0.25¢ per contract at 100 ms after the fee, ±2 SE (72 moves); ≥ 5 bps moves +0.11 ± 0.64¢ per contract at 100 ms after the fee, ±2 SE (9 moves)): REJECT when no move threshold shows a positive pooled market-anchored edge at 100 ms or 250 ms and the 5 bps edge at 100 ms is negative by more than 2 move-clustered SE on >= 30 moves; otherwise COLLECT_MORE_DATA. One live window never promotes to paper.
+* By-series tables and the model-absolute view: `reports/live_study/summary.md`.
 
 ## 1. Data, instruments and exclusions
 
@@ -288,19 +312,19 @@ Move needed (bps of BTC) for a one-tick stale quote to clear the taker fee + 1¢
 
 ## 12. Known limitations and unresolved issues
 
-* No real venue data was examined (network policy). All profitability numbers are model-world results; they bound what is plausible, they do not estimate real P&L.
+* Real venue data: one 1.9 h window of Kalshi BTC books and Coinbase BTC-USD (see *Real-market check*). One window is one volatility regime and one set of makers; the model-world numbers in this report bound what is plausible, they do not estimate real P&L.
 * Synthetic makers re-quote from a lagged view with one-tick spreads and fixed depth distributions; real quoting (inventory skew, widening into events, cancels) differs.
 * Competition is modelled as one arbitrageur class with a single latency and threshold.
 * The ex-ante 'truth' is the model world's fair value (current regime vol, exact 60 s averaging); it measures edge against well-informed makers, not against real ones.
 * Fee formulas reflect official documentation as of 2026-10 (Kalshi 0.07·C·P·(1−P) rounded up per order; Polymarket crypto 0.07·C·p·(1−p)); maker rebates are not credited; verify per-series values at runtime.
-* Kalshi WebSocket market data requires API credentials; without them the collector falls back to REST polling, which cannot measure sub-second lead-lag.
+* Kalshi WebSocket data was collected with API credentials on this machine's network path; a co-located competitor sees and acts on moves sooner than the receive-time timeline used here.
 * Cross-venue BTC contracts settle on different references (Kalshi BRTI 60 s average vs Polymarket Binance BTCUSDT candles or Chainlink TWAP): they are basis trades, never riskless equivalents; the mapping registry rejects them as equivalent.
-* Parsers were written from documented schemas without live payloads; schema drift is quarantined, not silently accepted, and must be checked on first live collection.
+* Kalshi WebSocket and Coinbase parsers have run on live payloads; Polymarket, Binance and Deribit parsers are still unverified against live traffic.
 
 ## 13. Next steps to reach a real-market decision
 
-* Allow the market-data hosts in the environment network policy (Kalshi external-api, Polymarket clob/gamma/data-api, Coinbase exchange, Deribit) and add Kalshi API credentials via environment variables (never config files).
-* `cma collect --duration 1209600` for ≥ 14 days to capture synchronized books (`KXBTCD`, Polymarket BTC markets, Coinbase BTC-USD, Deribit DVOL/options).
-* Review and approve mappings (`config/mappings/registry`), build a dataset (`cma dataset build`), run `cma stress` and `cma leadlag`; publish only manifests that pass `validate_publication`.
-* Measure the real maker reaction-lag distribution and competitor fill speed: the frontier above says whether any latency budget can be profitable before money is spent on infrastructure.
+* Extend the live capture to >= 14 days (`scripts/live_study.py collect`) across volatility regimes, US and Asian hours and expiry days, then re-run `scripts/live_study.py analyze`; one window is not a sample of regimes.
+* Add Polymarket BTC markets and Binance / Deribit reference feeds to the same capture to test the cross-venue and options-led signals on real books.
+* Only if an edge cell stays positive on the long sample: approve mappings, build a dataset (`cma dataset build`), run `cma stress` and `cma leadlag`, and require every promotion gate before forward paper trading.
+* Look beyond latency taking: passive quoting, which pays far lower fees than taking, and near-expiry contracts where delta is high.
 

@@ -1018,6 +1018,18 @@ def analyze_quotes(
     return result
 
 
+def lead_lag_direction(o: Mapping[str, Any]) -> str:
+    """Which market moved first at the cross-correlation peak (signed lag, X = reference)."""
+    lag = o.get("best_lag_ms")
+    if lag is None:
+        return "no correlation peak"
+    if lag < 0:
+        return f"Kalshi moved first (peak at {lag} ms)"
+    if lag > 0:
+        return f"Coinbase led by {lag} ms"
+    return "moved together (peak at 0 ms)"
+
+
 def _f(v: Any, nd: int = 0) -> str:
     return "n/a" if v is None else f"{v:.{nd}f}"
 
@@ -1090,11 +1102,12 @@ def render_markdown(result: Mapping[str, Any]) -> str:
     bq = (result.get("book_quality") or {}).get("KALSHI")
     if bq:
         w.append(
-            f"Kalshi book replay: {bq.get('books')} books, {bq.get('snapshots')} snapshots "
-            f"({bq.get('resets')} after a sequence restart), {bq.get('deltas_applied')} deltas; "
-            f"{bq.get('crossed')} crossed updates skipped, {bq.get('gaps')} sequence gaps, "
-            f"{bq.get('negative_quantity')} negative sizes, {bq.get('books_invalid_at_end')} "
-            "books invalid at the end."
+            f"Kalshi book replay: {bq.get('books')} books, {bq.get('deltas_applied')} deltas and "
+            f"{bq.get('snapshots')} snapshots applied; {bq.get('subscription_gaps', 0)} gaps in "
+            f"the subscription sequence ({bq.get('subscriptions', 0)} subscriptions), "
+            f"{bq.get('ignored_while_invalid')} updates skipped while a book awaited a snapshot, "
+            f"{bq.get('crossed')} crossed states skipped, {bq.get('negative_quantity')} negative "
+            f"sizes; {bq.get('books_invalid_at_end')} books invalid at the end."
         )
     w.append("")
     dec = result.get("decision") or {}
@@ -1138,7 +1151,7 @@ def render_markdown(result: Mapping[str, Any]) -> str:
     for r in result.get("lead_lag", []):
         o = r["result"]
         w.append(
-            f"* {r['contract']} ({r['updates']} updates): lag {o.get('best_positive_lag_ms')} ms "
+            f"* {r['contract']} ({r['updates']} updates): {lead_lag_direction(o)} "
             f"(HY {o.get('hy_best_lag_ms')} ms), p {_f(o.get('p_value'), 3)}, ΔOOS R² "
             f"{_f(o.get('incremental_oos_r2'), 3)}, qualifies {o.get('qualifies')}"
         )

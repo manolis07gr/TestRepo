@@ -144,6 +144,12 @@ def _n(x: Any) -> str:
     return f"{int(x):,}" if isinstance(x, int | float) and math.isfinite(x) else "n/a"
 
 
+def lead_lag_direction(o: Mapping[str, Any]) -> str:
+    from cma.research.live_study import lead_lag_direction as direction
+
+    return direction(o)
+
+
 def live_primary(live: Mapping[str, Any]) -> Mapping[str, Any] | None:
     """Pooled (all series) row of the live study at its primary move threshold."""
     from cma.research.live_study import PRIMARY_THRESHOLD_BPS
@@ -165,6 +171,18 @@ def edge_band(cell: Mapping[str, Any]) -> str:
     if mean is None:
         return "n/a"
     return f"{mean:+.2f}" + (f" ± {2 * se:.2f}" if se is not None else "")
+
+
+def live_edge_summary(live: Mapping[str, Any]) -> str:
+    """'>= 3 bps moves: -0.78 ± 0.25¢ per contract at 100 ms (72 moves); ...' by threshold."""
+    rows = [r for r in live.get("pooled", []) if live_cell(r, 100).get("mean_c") is not None]
+    if not rows:
+        return "no samples"
+    return "; ".join(
+        f"≥ {r['threshold_bps']:g} bps moves {edge_band(live_cell(r, 100))}¢ per contract at "
+        f"100 ms after the fee, ±2 SE ({_n(r['moves'])} moves)"
+        for r in sorted(rows, key=lambda r: -r["moves"])
+    )
 
 
 def live_markdown(live: Mapping[str, Any]) -> list[str]:
@@ -201,11 +219,12 @@ def live_markdown(live: Mapping[str, Any]) -> list[str]:
     bq = (live.get("book_quality") or {}).get("KALSHI") or {}
     if bq:
         out.append(
-            f"* Kalshi book replay: {_n(bq.get('snapshots'))} snapshots ({_n(bq.get('resets'))} "
-            f"after reconnects), {_n(bq.get('deltas_applied'))} deltas, {_n(bq.get('crossed'))} "
-            f"momentarily crossed states skipped, {_n(bq.get('gaps'))} sequence gaps; "
-            f"{_n(bq.get('books_invalid_at_end'))} of {_n(bq.get('books'))} books invalid at "
-            "the end."
+            f"* Kalshi book replay: {_n(bq.get('deltas_applied'))} deltas and "
+            f"{_n(bq.get('snapshots'))} snapshots applied; {_n(bq.get('subscription_gaps', 0))} "
+            f"gaps in the subscription sequence, {_n(bq.get('ignored_while_invalid'))} updates "
+            f"skipped while a book awaited a snapshot, {_n(bq.get('crossed'))} momentarily "
+            f"crossed states skipped; {_n(bq.get('books_invalid_at_end'))} of "
+            f"{_n(bq.get('books'))} books invalid at the end."
         )
     out.append(
         "* Method: for every move and every contract whose fair value it shifts by at least 1¢ "
@@ -266,14 +285,13 @@ def live_markdown(live: Mapping[str, Any]) -> list[str]:
         o = r["result"]
         out.append(
             f"* Lead-lag {r['contract'].split(':')[-1]} ({_n(r['updates'])} mid changes): "
-            f"Coinbase leads by {o.get('best_positive_lag_ms')} ms, p {_f(o.get('p_value'), 3)}, "
-            f"ΔOOS R² {_f(o.get('incremental_oos_r2'), 3)}, economic gate "
+            f"{lead_lag_direction(o)}; p {_f(o.get('p_value'), 3)}, out-of-sample ΔR² "
+            f"{_f(o.get('incremental_oos_r2'), 3)}, economic gate "
             f"{'passed' if o.get('qualifies') else 'failed'}."
         )
-    reasons = dec.get("reasons", [])
     out.append(
-        f"* Decision `{dec.get('decision')}`: {_tidy(reasons[0]) if reasons else 'n/a'}. "
-        f"Rule fixed before the run: {dec.get('rule')}"
+        f"* Decision `{dec.get('decision')}` by the rule fixed before the run "
+        f"({live_edge_summary(live)}): {dec.get('rule')}"
     )
     out.append("* By-series tables and the model-absolute view: `reports/live_study/summary.md`.")
     out.append("")
@@ -336,8 +354,9 @@ def render_markdown(result: Mapping[str, Any], live: Mapping[str, Any] | None = 
         w(
             f"* **Real markets (Kalshi BTC order books, "
             f"{_f((live or {}).get('window', {}).get('hours'), 1)} h live): "
-            f"`{live_dec.get('decision')}`** for the stale-quote taker: "
-            f"{_tidy(reasons[0]) if reasons else 'n/a'}. See *Real-market check* below."
+            f"`{live_dec.get('decision')}`** for the stale-quote taker, by the rule fixed before "
+            f"the run: {live_edge_summary(live or {}) if reasons else 'n/a'}. See "
+            "*Real-market check* below."
         )
     else:
         w(

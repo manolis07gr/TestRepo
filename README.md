@@ -7,13 +7,15 @@ fees, spread, depth, latency, partial fills and adverse selection. Built to the
 "Technical Scope, Architecture, Validation Plan & Test Specification" v1.0 (5 Oct 2026).
 
 > **Edge evaluation:** [`reports/edge_evaluation/DECISION_REPORT.md`](reports/edge_evaluation/DECISION_REPORT.md)
-> (charts: `reports/edge_evaluation/edge_evaluation.html`). Real-market decision: **COLLECT_MORE_DATA**:
-> the build environment's network policy blocked every market-data host, so no real venue data was
-> examined. In a calibrated simulation run through the production pipeline, a lead-lag *taker* on
-> BTC contracts clears the 0.07·p(1−p) taker fee reliably only when makers take ≳1 s to re-quote.
-> At the ~350 ms reported for Polymarket it is break-even at best (+0.05¢/contract at 100 ms with
-> no rival) and negative once a 120 ms arbitrageur is present (−0.74¢ at 250 ms); both synthetic
-> base cases are **REJECT**.
+> (charts: `reports/edge_evaluation/edge_evaluation.html`; live study: [`reports/live_study/summary.md`](reports/live_study/summary.md)).
+> Real-market decision: **COLLECT_MORE_DATA** by a rule fixed before the run. On 1.9 h of authenticated
+> Kalshi BTC order books (702 contracts, 10.2M book updates) against Coinbase BTC-USD, Kalshi had usually
+> repriced before a BTC move reached a cloud machine (60% of quotes already halfway, three quarters within
+> ~230 ms), and taking the quote after a ≥3 bp move lost 0.78¢ per contract at 100 ms after the fee
+> (±0.25¢ at 2 SE, 72 moves). The window was calm (9 moves ≥5 bp, none ≥10 bp), so the ≥5 bp test
+> (+0.11 ± 0.64¢) cannot decide. In a calibrated simulation through the production pipeline a lead-lag
+> *taker* clears the 0.07·p(1−p) fee only when makers take ≳1 s to re-quote; both synthetic base cases are
+> **REJECT**.
 
 ## What is in the box
 

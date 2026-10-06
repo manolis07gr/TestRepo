@@ -546,50 +546,102 @@ def _took(v: float | None, lat: int, *, first: bool) -> str:
     )
 
 
+def _lead_rows(
+    live: Mapping[str, Any],
+) -> tuple[Mapping[str, Any] | None, Mapping[str, Any] | None]:
+    """(row to lead with, primary row): the primary threshold when it has enough moves for
+    the decision rule, else the best-populated threshold, with the primary kept beside it."""
+    from cma.research.live_study import MIN_DECISION_MOVES
+
+    rows = [r for r in live.get("pooled", []) if live_cell(r, 100).get("mean_c") is not None]
+    prim = live_primary(live)
+    if not rows:
+        return None, prim
+    if prim is not None and prim in rows and prim["moves"] >= MIN_DECISION_MOVES:
+        return prim, prim
+    return max(rows, key=lambda r: r["moves"]), prim
+
+
+def _cell_text(row: Mapping[str, Any], lat: int) -> str:
+    cell = live_cell(row, lat)
+    return f"{_band(cell)}¢ at {lat} ms"
+
+
 def live_lede(live: Mapping[str, Any]) -> str:
-    """One data-driven sentence on the live window (opens the page when present)."""
+    """Data-driven opening sentences on the live window (they open the page when present)."""
     dec = (live.get("decision") or {}).get("decision", "COLLECT_MORE_DATA")
     hours = _num(live.get("window", {}).get("hours")) or 0.0
-    prim = live_primary(live)
-    c100, c250 = live_cell(prim, 100), live_cell(prim, 250)
-    m100, m250 = _num(c100.get("mean_c")), _num(c250.get("mean_c"))
-    if prim is None or m100 is None:
+    lead, prim = _lead_rows(live)
+    if lead is None:
         reasons = (live.get("decision") or {}).get("reasons") or ["no samples"]
         return f"Not yet measurable on real Kalshi books ({reasons[0]})."
-    med = _num((prim.get("reaction_ms") or {}).get("median"))
+    significant = any(
+        (m := _num(live_cell(r, lat).get("mean_c"))) is not None
+        and (se := _num(live_cell(r, lat).get("se_c"))) is not None
+        and m - 2 * se > 0
+        for r in live.get("pooled", [])
+        for lat in (100, 250)
+    )
     opener = (
         "Not on real Kalshi books."
         if dec == "REJECT"
-        else ("Not proven on real Kalshi books." if m100 > 0 or (m250 or 0) > 0 else "Not so far.")
+        else ("Not proven on real Kalshi books." if significant else "Not on this evidence.")
     )
-    same = (m100 > 0) == ((m250 or 0) > 0)
-    body = (
-        f" Over {hours:.1f} hours of live order books, Kalshi makers repriced half of a "
-        f"≥ 5 bps BTC move within a median {_fmt(med, 0)} ms of our seeing it, and taking the "
-        f"stale quote {_took(m100, 100, first=True)} {'and' if same else 'but'} "
-        f"{_took(m250, 250, first=False)} after the fee"
-    )
+    rt = lead.get("reaction_ms") or {}
+    med, p75, early = (_num(rt.get(k)) for k in ("median", "p75", "share_already_moved"))
+    thr = f"≥ {lead['threshold_bps']:g} bps"
+    if med is not None and med <= 50 and early is not None:
+        react = (
+            f" Over {hours:.1f} hours of live order books, Kalshi had usually repriced before a "
+            f"{thr} BTC move even reached us ({100 * early:.0f}% of quotes already at least "
+            f"halfway, three quarters within {_fmt(p75, 0)} ms)"
+        )
+    else:
+        react = (
+            f" Over {hours:.1f} hours of live order books, Kalshi makers repriced half of a "
+            f"{thr} BTC move within a median {_fmt(med, 0)} ms of our seeing it"
+        )
+    c100, c250 = live_cell(lead, 100), live_cell(lead, 250)
+    m100, m250 = _num(c100.get("mean_c")), _num(c250.get("mean_c"))
+    same = ((m100 or 0) > 0) == ((m250 or 0) > 0)
     se = _num(c100.get("se_c"))
-    if dec == "REJECT":
-        return f"{opener}{body}."
-    band = f" (±{2 * se:.2f}¢ at two standard errors)" if se is not None else ""
-    return (
-        f"{opener}{body}{band}; one {hours:.1f}-hour window cannot settle it, so the call is "
-        "to collect more data."
+    band = f", ±{2 * se:.2f}¢ at two standard errors" if se is not None else ""
+    edge = (
+        f", and taking the quote after it {_took(m100, 100, first=True)} "
+        f"{'and' if same else 'but'} {_took(m250, 250, first=False)} after the fee "
+        f"({_fmt(c100.get('moves'), 0)} moves{band})"
     )
+    from cma.research.live_study import MIN_DECISION_MOVES
+
+    if dec == "REJECT":
+        return f"{opener}{react}{edge}."
+    if prim is not None and prim is not lead:
+        pc = live_cell(prim, 100)
+        tail = (
+            f". After ≥ {prim['threshold_bps']:g} bps moves it was {_band(pc)}¢ on only "
+            f"{_fmt(pc.get('moves'), 0)} moves, too few to decide"
+        )
+    elif prim is not None and prim["moves"] < MIN_DECISION_MOVES:
+        tail = ", on too few moves to decide"
+    else:
+        tail = ", and one window cannot settle it"
+    return f"{opener}{react}{edge}{tail}, so the pre-registered call is to collect more data."
 
 
 def live_verdict(live: Mapping[str, Any]) -> tuple[str, str, str]:
     dec = live.get("decision") or {}
     hours = _num(live.get("window", {}).get("hours")) or 0.0
-    prim = live_primary(live)
-    c100, c250 = live_cell(prim, 100), live_cell(prim, 250)
-    why = (
-        f"after ≥ 5 bps moves: {_band(c100)}¢ at 100 ms, {_band(c250)}¢ at 250 ms "
-        "per contract (±2 SE)"
-        if prim is not None and c100.get("mean_c") is not None
-        else (dec.get("reasons") or ["no samples"])[0]
-    )
+    lead, prim = _lead_rows(live)
+    if lead is None:
+        why = (dec.get("reasons") or ["no samples"])[0]
+    else:
+        rows = [lead] + ([prim] if prim is not None and prim is not lead else [])
+        why = "; ".join(
+            f"≥ {r['threshold_bps']:g} bps: {_cell_text(r, 100)}, {_cell_text(r, 250)} "
+            f"({_fmt(r['moves'], 0)} moves)"
+            for r in rows
+        )
+        why = f"per contract after the fee, ±2 SE. {why}"
     return (
         f"Real Kalshi books, {hours:.1f} h live",
         str(dec.get("decision", "COLLECT_MORE_DATA")),
@@ -601,15 +653,17 @@ def _live_section(live: Mapping[str, Any]) -> str:
     win, ref, con = live.get("window", {}), live.get("reference", {}), live.get("contracts", {})
     lats = [int(x) for x in live.get("config", {}).get("latencies_ms", [0, 100, 250, 500, 1000])]
     pooled = live.get("pooled", [])
-    prim = live_primary(live)
-    lt = (prim or {}).get("lifetime_ms", {})
-    rt = (prim or {}).get("reaction_ms") or {}
-    c100, c250 = live_cell(prim, 100), live_cell(prim, 250)
+    lead, prim = _lead_rows(live)
+    lt = (lead or {}).get("lifetime_ms", {})
+    rt = (lead or {}).get("reaction_ms") or {}
+    c100, c250 = live_cell(lead, 100), live_cell(lead, 250)
+    thr = f"≥\u00a0{(lead or {}).get('threshold_bps', 5):g}\u00a0bps"  # keep on one line
     base = live.get("baseline_anchored", {})
     base_abs = live.get("baseline", {})
     early = _num(rt.get("share_already_moved"))
+    med = _num(rt.get("median"))
 
-    def tile_edge(cell: Mapping[str, Any], label: str) -> str:
+    def tile_edge(cell: Mapping[str, Any], label: str, extra: str = "") -> str:
         se = _num(cell.get("se_c"))
         return (
             f'<div class="tile"><span class="label">{label}</span>'
@@ -617,19 +671,37 @@ def _live_section(live: Mapping[str, Any]) -> str:
             f"{_fmt(cell.get('mean_c'), 2, True)}¢</span>"
             f'<span class="note">per contract after the fee · ±{_fmt(2 * se if se else None, 2)}¢'
             f" (2 SE, clustered by move) · {_fmt(cell.get('n'), 0)} quotes on "
-            f"{_fmt(cell.get('moves'), 0)} moves</span></div>"
+            f"{_fmt(cell.get('moves'), 0)} moves{extra}</span></div>"
         )
 
+    if med is not None and med <= 50 and early is not None:
+        reaction_tile = (
+            '<div class="tile"><span class="label">Already repriced when the move reached us'
+            f'</span><span class="value">{_fmt(100 * early, 0)}%</span>'
+            f'<span class="note">of quotes after {thr} moves: Kalshi\'s mid had covered half '
+            f"the predicted repricing · three quarters within {_fmt(rt.get('p75'), 0)} ms · "
+            f"quote life median {_fmt(lt.get('median'), 0)} ms</span></div>"
+        )
+    else:
+        reaction_tile = (
+            '<div class="tile"><span class="label">Median maker reaction</span>'
+            f'<span class="value">{_fmt(med, 0)} ms</span>'
+            f'<span class="note">for Kalshi\'s mid to cover half the predicted repricing of a '
+            f"{thr} move · p25–p75 {_fmt(rt.get('p25'), 0)}–{_fmt(rt.get('p75'), 0)} ms · "
+            f"{_fmt(100 * early if early is not None else None, 0)}% repriced before we saw the "
+            f"move · quote life median {_fmt(lt.get('median'), 0)} ms</span></div>"
+        )
+    prim_note = ""
+    if prim is not None and prim is not lead:
+        prim_note = (
+            f" · ≥ {prim['threshold_bps']:g} bps moves: {_band(live_cell(prim, 100))}¢ on "
+            f"{_fmt(live_cell(prim, 100).get('moves'), 0)} moves"
+        )
     tiles = (
         '<div class="tiles">'
-        '<div class="tile"><span class="label">Median maker reaction</span>'
-        f'<span class="value">{_fmt(rt.get("median"), 0)} ms</span>'
-        '<span class="note">for Kalshi\'s mid to cover half the predicted repricing of a '
-        f"≥ 5 bps move · p25–p75 {_fmt(rt.get('p25'), 0)}–{_fmt(rt.get('p75'), 0)} ms · "
-        f"{_fmt(100 * early if early is not None else None, 0)}% repriced before we saw the "
-        f"move · quote life median {_fmt(lt.get('median'), 0)} ms</span></div>"
-        + tile_edge(c100, "Taking it 100 ms after the move")
-        + tile_edge(c250, "Taking it 250 ms after the move")
+        + reaction_tile
+        + tile_edge(c100, f"Taking it 100 ms after a {thr} move", prim_note)
+        + tile_edge(c250, f"Taking it 250 ms after a {thr} move")
         + '<div class="tile"><span class="label">Trading without news</span>'
         f'<span class="value {_cls(base.get("mean_c"))}">{_fmt(base.get("mean_c"), 2, True)}¢'
         "</span>"
@@ -683,7 +755,7 @@ def _live_section(live: Mapping[str, Any]) -> str:
     ll_rows = "".join(
         f"<tr><td>{html.escape(r['contract'].split(':')[-1])}</td>"
         f"<td>{_fmt(r['updates'], 0)}</td>"
-        f"<td>{html.escape(str(r['result'].get('best_positive_lag_ms')))}</td>"
+        f"<td>{_fmt(r['result'].get('best_lag_ms'), 0)}</td>"
         f"<td>{_fmt(r['result'].get('p_value'), 3)}</td>"
         f"<td>{_fmt(r['result'].get('incremental_oos_r2'), 3)}</td>"
         f"<td>{'yes' if r['result'].get('qualifies') else 'no'}</td></tr>"
@@ -691,8 +763,11 @@ def _live_section(live: Mapping[str, Any]) -> str:
     )
     ll_html = (
         '<h3>Lead-lag: Coinbase mid to contract mid</h3><div class="tablebox"><table><thead><tr>'
-        "<th>contract</th><th>mid changes</th><th>lag ms</th><th>p</th><th>ΔOOS R²</th>"
-        f"<th>clears fees</th></tr></thead><tbody>{ll_rows}</tbody></table></div>"
+        "<th>contract</th><th>mid changes</th><th>peak lag ms</th><th>p</th>"
+        "<th>out-of-sample ΔR²</th><th>clears fees</th></tr></thead>"
+        f"<tbody>{ll_rows}</tbody></table></div>"
+        '<p class="memo" style="font-size:13px;color:var(--ink-3)">Peak lag of the '
+        "cross-correlation: positive when Coinbase moves first, negative when Kalshi does.</p>"
         if ll_rows
         else ""
     )

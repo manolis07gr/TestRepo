@@ -24,5 +24,18 @@
   "config_hash": "ac775e935df525839246d1c4aadaea8bdfa11ddbfda292e5a073d2f97b6fc496",
   "dataset_hash": "7c5562ded542a099784af034e7ed9be05c634a67ed4608d4e59f015279ff1df1",
   "seed": 20261006
+ },
+ "real_market_reasons": [
+  "positive mean edge: 5 bps at 100 ms",
+  "3 bps at 100 ms: -0.78\u00a2 \u00b1 0.25 (2 SE), 632 samples on 72 moves",
+  "3 bps at 250 ms: -0.95\u00a2 \u00b1 0.24 (2 SE), 632 samples on 72 moves",
+  "5 bps at 100 ms: +0.11\u00a2 \u00b1 0.64 (2 SE), 91 samples on 9 moves",
+  "5 bps at 250 ms: -0.15\u00a2 \u00b1 0.71 (2 SE), 91 samples on 9 moves"
+ ],
+ "real_market_rule": "REJECT when no move threshold shows a positive pooled market-anchored edge at 100 ms or 250 ms and the 5 bps edge at 100 ms is negative by more than 2 move-clustered SE on >= 30 moves; otherwise COLLECT_MORE_DATA. One live window never promotes to paper.",
+ "real_market_window": {
+  "start": "2026-10-06T14:16:31.919540229Z",
+  "end": "2026-10-06T16:12:36.154993494Z",
+  "hours": 1.9345098481291667
  }
 }
