@@ -533,7 +533,6 @@ def summarize_samples(samples: Sequence[Sample], cfg: StudyConfig) -> list[dict[
 
 
 def lead_lag_contracts(
-    events: Sequence[MarketEvent],
     *,
     contracts: Sequence[AboveContract],
     quotes: Mapping[str, Quote],
@@ -543,7 +542,6 @@ def lead_lag_contracts(
 ) -> list[dict[str, Any]]:
     from cma.models.lead_lag.discovery import LeadLagConfig, discover_lead_lag
 
-    del events  # quotes already hold the contract series
     ranked = sorted(
         (c for c in contracts if c.instrument_id in quotes),
         key=lambda c: -quotes[c.instrument_id].ts.size,
@@ -576,17 +574,107 @@ def analyze(
     cfg: StudyConfig | None = None,
     dvol: Sequence[tuple[int, float]] | None = None,
 ) -> dict[str, Any]:
-    cfg = cfg or StudyConfig()
+    """In-memory front end (tests, small captures): events -> quotes -> study."""
     by_instrument: dict[str, list[MarketEvent]] = {}
     for ev in events:  # one pass; per-instrument replays then touch only their own events
         by_instrument.setdefault(ev.instrument_id, []).append(ev)
-    ref_q = quote_series(by_instrument.get(REFERENCE, []), REFERENCE)
-    ref_ts, ref_mid = mid_from_quote(ref_q)
     above = above_contracts(contracts)
     quotes = {
-        c.instrument_id: quote_series(by_instrument.get(c.instrument_id, []), c.instrument_id)
-        for c in above
+        inst: quote_series(by_instrument.get(inst, []), inst)
+        for inst in {REFERENCE, *(c.instrument_id for c in above)}
     }
+    return analyze_quotes(quotes, contracts, cfg=cfg, dvol=dvol)
+
+
+def stream_quotes(raw_root: Path, instruments: Iterable[str]) -> tuple[dict[str, Quote], int]:
+    """Receive-time top of book per instrument straight from the raw store.
+
+    One pass, constant memory per book: only *changes* of the top of book are kept, so a
+    multi-hour capture with millions of deep-book deltas reduces to compact arrays.
+    Returns (quotes, raw messages read).
+    """
+    from array import array
+
+    from cma.adapters.base import MalformedPayloadError
+    from cma.storage.normalize import default_adapters
+    from cma.storage.raw import RawReader
+
+    table = default_adapters()
+    wanted = set(instruments)
+    builders: dict[str, L2BookBuilder] = {}
+    cols: dict[str, tuple[array[int], array[float], array[float], array[float], array[float]]] = {}
+    last: dict[str, tuple[float, float, float, float]] = {}
+    n = 0
+    for raw in RawReader(raw_root).iter_messages():
+        n += 1
+        adapter = table.get(raw.venue)
+        if adapter is None:
+            continue
+        try:
+            events = adapter.parse(raw)
+        except MalformedPayloadError:
+            continue
+        for ev in events:
+            inst = ev.instrument_id
+            if inst not in wanted or not isinstance(ev, BookSnapshotEvent | BookDeltaEvent):
+                continue
+            b = builders.get(inst)
+            if b is None:
+                b = builders[inst] = L2BookBuilder(
+                    venue=ev.venue, instrument_id=inst, require_sequence=False
+                )
+            b.apply(ev)
+            if not b.is_valid:
+                continue
+            bb, ba = b.best_bid(), b.best_ask()
+            top = (
+                float(bb[0]) if bb else math.nan,
+                float(bb[1]) if bb else 0.0,
+                float(ba[0]) if ba else math.nan,
+                float(ba[1]) if ba else 0.0,
+            )
+            prev = last.get(inst)
+            if prev is not None and all(
+                x == y or (math.isnan(x) and math.isnan(y)) for x, y in zip(prev, top, strict=True)
+            ):
+                continue
+            last[inst] = top
+            c = cols.get(inst)
+            if c is None:
+                c = cols[inst] = (array("q"), array("d"), array("d"), array("d"), array("d"))
+            c[0].append(ev.recv_ts_ns)
+            c[1].append(top[0])
+            c[2].append(top[2])
+            c[3].append(top[1])
+            c[4].append(top[3])
+    quotes = {
+        inst: Quote(
+            ts=np.asarray(c[0], dtype=np.int64),
+            bid=np.asarray(c[1], dtype=float),
+            ask=np.asarray(c[2], dtype=float),
+            bid_qty=np.asarray(c[3], dtype=float),
+            ask_qty=np.asarray(c[4], dtype=float),
+        )
+        for inst, c in cols.items()
+    }
+    return quotes, n
+
+
+def analyze_quotes(
+    quotes: Mapping[str, Quote],
+    contracts: Sequence[PredictionContract],
+    *,
+    cfg: StudyConfig | None = None,
+    dvol: Sequence[tuple[int, float]] | None = None,
+) -> dict[str, Any]:
+    """The study on receive-time quotes (reference + Kalshi YES books)."""
+    cfg = cfg or StudyConfig()
+    ref_q = quotes.get(REFERENCE)
+    ref_ts, ref_mid = (
+        mid_from_quote(ref_q) if ref_q is not None else (np.zeros(0, np.int64), np.zeros(0))
+    )
+    above = above_contracts(contracts)
+    quotes = {c.instrument_id: quotes[c.instrument_id] for c in above if c.instrument_id in quotes}
     quotes = {k: v for k, v in quotes.items() if v.ts.size}
     if ref_ts.size == 0:
         return {"error": "no reference (Coinbase BTC-USD) data", "contracts": len(above)}
@@ -646,7 +734,7 @@ def analyze(
         "baseline": _baseline_stats(base),
         "baseline_anchored": _baseline_stats(base_anchored),
         "lead_lag": lead_lag_contracts(
-            events, contracts=above, quotes=quotes, ref_ts=ref_ts, ref_mid=ref_mid, cfg=cfg
+            contracts=above, quotes=quotes, ref_ts=ref_ts, ref_mid=ref_mid, cfg=cfg
         ),
     }
 

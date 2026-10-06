@@ -4,9 +4,9 @@
   python scripts/live_study.py analyze --out reports/live_study
 
 ``collect`` runs the production collector with config/base.yaml + config/live_study.yaml and
-prints a one-line health summary every ``--report-every`` seconds. ``analyze`` reads the raw
-store and contract metadata it wrote and produces summary.json / summary.md
-(see cma.research.live_study for the method).
+prints a one-line health summary every ``--report-every`` seconds. ``analyze`` streams the
+raw store once (memory scales with top-of-book changes, not raw messages) and writes
+summary.json / summary.md (see cma.research.live_study for the method).
 """
 
 from __future__ import annotations
@@ -17,19 +17,24 @@ import json
 import sys
 import time
 from pathlib import Path
+from typing import Any
 
 from cma.config import load_config
-from cma.domain.time import SystemClock
-from cma.normalization.pipeline import Normalizer
-from cma.research.live_study import REFERENCE, StudyConfig, above_contracts, analyze, write_outputs
+from cma.research.live_study import (
+    REFERENCE,
+    StudyConfig,
+    above_contracts,
+    analyze_quotes,
+    stream_quotes,
+    write_outputs,
+)
 from cma.storage.contracts import ContractStore
 from cma.storage.db import open_database
-from cma.storage.normalize import normalize_raw
 
 CONFIGS = ("config/base.yaml", "config/live_study.yaml")
 
 
-def _brief(report: dict) -> str:
+def _brief(report: dict[str, Any]) -> str:
     feeds = ", ".join(
         f"{f['name']}={f['state']}/{f['messages']}msg"
         + (f"/err:{f['last_error']}" if f.get("last_error") else "")
@@ -53,7 +58,7 @@ def cmd_collect(args: argparse.Namespace) -> int:
     # discover new hourly / 15-minute markets within a minute of listing
     collector = build_collector(cfg, db=db, raw_root=cfg.storage.raw_dir, discovery_refresh_s=60.0)
 
-    async def main() -> None:
+    async def run() -> None:
         await collector.start()
         started = time.monotonic()
         try:
@@ -67,7 +72,7 @@ def cmd_collect(args: argparse.Namespace) -> int:
             await collector.stop()
             await collector.aclose()
 
-    asyncio.run(main())
+    asyncio.run(run())
     return 0
 
 
@@ -77,13 +82,17 @@ def cmd_analyze(args: argparse.Namespace) -> int:
     contracts = ContractStore(db).load()
     above = above_contracts(contracts)
     wanted = {REFERENCE} | {c.instrument_id for c in above}
-    events = normalize_raw(
-        Path(cfg.storage.raw_dir), wanted, Normalizer(cfg.data_quality, SystemClock())
-    )
+    started = time.monotonic()
+    quotes, n_raw = stream_quotes(Path(cfg.storage.raw_dir), wanted)
+    changes = sum(q.ts.size for q in quotes.values())
     print(
-        f"contracts {len(contracts)} (above-strike {len(above)}), events {len(events)}", flush=True
+        f"contracts {len(contracts)} (above-strike {len(above)}), raw messages {n_raw}, "
+        f"books {len(quotes)}, top-of-book changes {changes} "
+        f"in {time.monotonic() - started:.0f}s",
+        flush=True,
     )
-    result = analyze(events, contracts, cfg=StudyConfig())
+    result = analyze_quotes(quotes, contracts, cfg=StudyConfig())
+    result["raw_messages"] = n_raw
     paths = write_outputs(result, Path(args.out))
     print(json.dumps({"outputs": [str(p) for p in paths]}))
     print(paths[1].read_text())
