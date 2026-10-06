@@ -11,6 +11,7 @@ import contextlib
 import math
 from collections.abc import Sequence
 from dataclasses import dataclass, field
+from typing import Any
 
 from cma.backtest.experiment import StressGrid
 from cma.domain.enums import Decision
@@ -138,22 +139,27 @@ def decide(
     if base is not None:
         conc = base.metrics.concentration
         shares = [
-            (label, float(conc.get(key, math.nan)), limit)
-            for label, key, limit in (
-                ("contract", "top_contract_share_of_gains", policy.max_top_contract_share),
-                ("family", "top_family_share_of_gains", policy.max_top_family_share),
-                ("day", "top_day_share_of_gains", policy.max_top_day_share),
+            (label, float(conc.get(key, math.nan)), limit, conc.get(count_key or ""))
+            for label, key, limit, count_key in (
+                ("contract", "top_contract_share_of_gains", policy.max_top_contract_share, None),
+                ("family", "top_family_share_of_gains", policy.max_top_family_share, "n_families"),
+                ("day", "top_day_share_of_gains", policy.max_top_day_share, "n_days"),
             )
         ]
-        # NaN = no unit of that kind made money: nothing is concentrated (the
-        # out-of-sample gate already fails such a strategy)
+        # NaN = not assessable: no unit of that kind made money (the out-of-sample gate
+        # already fails such a strategy) or the sample holds a single family/day
         ok = documented_concentration or all(
-            math.isnan(share) or share <= limit for _, share, limit in shares
+            math.isnan(share) or share <= limit for _, share, limit, _ in shares
         )
-        detail = ", ".join(
-            f"{label} n/a (none profitable)" if math.isnan(share) else f"{label} {share:.0%}"
-            for label, share, _ in shares
-        )
+
+        def _share(label: str, share: float, count: Any) -> str:
+            if not math.isnan(share):
+                return f"{label} {share:.0%}"
+            if count is not None and int(count) < 2:
+                return f"{label} n/a ({int(count)} in sample)"
+            return f"{label} n/a (none profitable)"
+
+        detail = ", ".join(_share(label, share, n) for label, share, _, n in shares)
         gates.append(GateResult("profit_concentration", ok, f"top {detail} of gains", "robustness"))
         n = base.metrics.n_positions
         gates.append(

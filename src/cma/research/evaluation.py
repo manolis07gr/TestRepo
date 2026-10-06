@@ -454,6 +454,14 @@ def _risk_overlay_task(
     )
     families = {core._family_of(c.contract_id) or c.contract_id for c in part.contracts}
     traded = {core._family_of(f.contract_id) or f.contract_id for f in core.records.fills}
+    stops = [ts for ts, code, _ in core.risk.breaches if code is ReasonCode.DAILY_STOP]
+    activations = sorted(
+        {
+            ts
+            for ts, code, msg in core.risk.breaches
+            if code is ReasonCode.DAILY_STOP and msg.startswith("nav ")
+        }
+    )
     return {
         "daily_loss_stop_pct": float(cfg.risk.daily_loss_stop_pct),
         "latency_ms": latency,
@@ -461,9 +469,8 @@ def _risk_overlay_task(
         "contracts": r.metrics.filled_contracts,
         "families_traded": len(traded),
         "families": len(families),
-        "daily_stops": [
-            iso_from_ns(ts) for ts, code, _ in core.risk.breaches if code is ReasonCode.DAILY_STOP
-        ],
+        "daily_stop_activations": [iso_from_ns(ts) for ts in activations],
+        "orders_denied_by_stop": len(stops) - len(activations),
     }
 
 

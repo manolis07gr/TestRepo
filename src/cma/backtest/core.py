@@ -346,7 +346,9 @@ class TradingCore:
         elif kind is ActionKind.MARKOUT:
             assert isinstance(payload, tuple)
             fill_id, horizon_ms, contract_id = payload
-            mid = self._last_mid.get(contract_id)
+            # a horizon that ends after the contract closed has no market mid: the last
+            # pre-close quote is ~the settlement outcome, i.e. luck, not a mark-out
+            mid = None if contract_id in self._closed else self._last_mid.get(contract_id)
             if mid is not None:
                 self.records.markouts[(fill_id, horizon_ms)] = mid
         elif kind is ActionKind.TIMER:

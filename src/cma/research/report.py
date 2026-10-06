@@ -117,17 +117,20 @@ def risk_overlay_sentence(base: Mapping[str, Any]) -> str:
     ov = base.get("production_risk_overlay") or {}
     if not ov:
         return ""
-    stops = ov.get("daily_stops") or []
+    stops = ov.get("daily_stop_activations") or ov.get("daily_stops") or []
     head = (
         f"With the production {ov.get('daily_loss_stop_pct', 2):g}% daily loss stop on, the "
         f"{ov.get('latency_ms')} ms base run"
     )
     if not stops:
         return f"{head} never hit the stop (net P&L {_f(ov.get('net_pnl'))})."
+    denied = ov.get("orders_denied_by_stop")
     return (
         f"{head} hit the stop at {str(stops[0])[11:16]} UTC and traded "
         f"{ov.get('families_traded')} of {ov.get('families')} hourly ladders "
-        f"(net P&L {_f(ov.get('net_pnl'))})."
+        f"(net P&L {_f(ov.get('net_pnl'))}"
+        + (f"; {denied:,} orders refused" if denied else "")
+        + ")."
     )
 
 
