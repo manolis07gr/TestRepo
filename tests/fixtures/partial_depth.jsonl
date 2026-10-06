@@ -1,0 +1,1 @@
+{"asks":[["0.50","10"],["0.51","20"],["0.53","30"]],"bids":[["0.48","40"],["0.47","40"]],"instrument_id":"KALSHI:FIXTURE-BOOK","payload_hash":"snap-1","recv_ts_ns":1790000000020000000,"sequence":1,"source_ts_ns":1790000000000000000,"sub_index":0,"type":"BOOK_SNAPSHOT","venue":"KALSHI"}

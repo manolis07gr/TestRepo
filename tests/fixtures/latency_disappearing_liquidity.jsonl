@@ -1,0 +1,3 @@
+{"asks":[["0.40","50"],["0.45","100"]],"bids":[["0.38","100"]],"instrument_id":"KALSHI:FIXTURE-BOOK","payload_hash":"snap-1","recv_ts_ns":1790000000020000000,"sequence":1,"source_ts_ns":1790000000000000000,"sub_index":0,"type":"BOOK_SNAPSHOT","venue":"KALSHI"}
+{"changes":[["ASK","0.40","-50"]],"instrument_id":"KALSHI:FIXTURE-BOOK","mode":"INCREMENT","payload_hash":"delta-2","recv_ts_ns":1790000000070000000,"sequence":2,"source_ts_ns":1790000000050000000,"sub_index":0,"type":"BOOK_DELTA","venue":"KALSHI"}
+{"changes":[["BID","0.38","10"]],"instrument_id":"KALSHI:FIXTURE-BOOK","mode":"INCREMENT","payload_hash":"delta-3","recv_ts_ns":1790000000520000000,"sequence":3,"source_ts_ns":1790000000500000000,"sub_index":0,"type":"BOOK_DELTA","venue":"KALSHI"}

@@ -1,0 +1,11 @@
+{
+  "decision_ts_ns": 1790000000020000000,
+  "fills_at_0ms": "50",
+  "fills_at_100ms": "0",
+  "order": {
+    "limit": "0.40",
+    "quantity": "50",
+    "side": "BUY",
+    "tif": "IOC"
+  }
+}

@@ -1,0 +1,15 @@
+{
+  "limit_filled": "30",
+  "limit_order": {
+    "limit": "0.52",
+    "quantity": "50",
+    "side": "BUY"
+  },
+  "limit_vwap": "0.5066666666666666666666666667",
+  "market_filled": "60",
+  "market_order": {
+    "quantity": "100",
+    "side": "BUY"
+  },
+  "market_vwap": "0.5183333333333333333333333333"
+}

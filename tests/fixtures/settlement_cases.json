@@ -1,0 +1,76 @@
+[
+  {
+    "name": "yes_long_wins",
+    "outcome": "YES",
+    "yes_value": "1",
+    "side": "BUY",
+    "price": "0.40",
+    "quantity": "10",
+    "expected_pnl": "6.00"
+  },
+  {
+    "name": "yes_long_loses",
+    "outcome": "NO",
+    "yes_value": "0",
+    "side": "BUY",
+    "price": "0.40",
+    "quantity": "10",
+    "expected_pnl": "-4.00"
+  },
+  {
+    "name": "no_long_wins",
+    "outcome": "NO",
+    "yes_value": "0",
+    "side": "BUY_NO",
+    "price": "0.35",
+    "quantity": "10",
+    "expected_pnl": "6.50"
+  },
+  {
+    "name": "no_long_loses",
+    "outcome": "YES",
+    "yes_value": "1",
+    "side": "BUY_NO",
+    "price": "0.35",
+    "quantity": "10",
+    "expected_pnl": "-3.50"
+  },
+  {
+    "name": "early_close_yes",
+    "outcome": "YES",
+    "yes_value": "1",
+    "side": "BUY",
+    "price": "0.70",
+    "quantity": "5",
+    "expected_pnl": "1.50",
+    "early_close": true
+  },
+  {
+    "name": "void_refund",
+    "outcome": "VOID",
+    "yes_value": "0",
+    "side": "BUY",
+    "price": "0.40",
+    "quantity": "10",
+    "expected_pnl": "0",
+    "void_policy": "refund_cost"
+  },
+  {
+    "name": "scalar_half",
+    "outcome": "SCALAR",
+    "yes_value": "0.5",
+    "side": "BUY",
+    "price": "0.40",
+    "quantity": "10",
+    "expected_pnl": "1.00"
+  },
+  {
+    "name": "no_long_scalar_half",
+    "outcome": "SCALAR",
+    "yes_value": "0.5",
+    "side": "BUY_NO",
+    "price": "0.35",
+    "quantity": "10",
+    "expected_pnl": "1.50"
+  }
+]

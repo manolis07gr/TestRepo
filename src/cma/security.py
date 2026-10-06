@@ -17,15 +17,17 @@ from typing import Any
 REDACTED = "***REDACTED***"
 
 # Shapes of credentials that must never appear in logs even if not registered.
-_PATTERNS = [
-    re.compile(r"-----BEGIN [A-Z ]*PRIVATE KEY-----.*?-----END [A-Z ]*PRIVATE KEY-----", re.S),
-    re.compile(
-        r"(?i)\b(KALSHI-ACCESS-SIGNATURE|POLY_SIGNATURE|POLY_API_KEY|POLY_PASSPHRASE|"
-        r"authorization|api[_-]?key|api[_-]?secret|secret|token|passphrase|signature)"
-        r"(\"?\s*[:=]\s*\"?)([^\s\",}]+)"
-    ),
-    re.compile(r"(?i)\bBearer\s+[A-Za-z0-9._~+/=-]+"),
-]
+_PRIVATE_KEY = re.compile(
+    r"-----BEGIN [A-Z ]*PRIVATE KEY-----.*?-----END [A-Z ]*PRIVATE KEY-----", re.S
+)
+_BEARER = re.compile(r"(?i)\bBearer\s+(?!\*\*\*REDACTED)[A-Za-z0-9._~+/=-]+")
+_KEY_VALUE = re.compile(
+    r"(?i)(KALSHI-ACCESS-SIGNATURE|KALSHI-ACCESS-KEY|POLY_SIGNATURE|POLY_API_KEY|"
+    r"POLY_PASSPHRASE|authorization|api[_-]?key|api[_-]?secret|secret|token|passphrase|"
+    r"signature)"
+    r"(['\"]?\s*[:=]\s*['\"]?)"
+    r"(?!\*\*\*REDACTED)([^\s'\",}]+)"
+)
 
 
 class _SecretRegistry:
@@ -87,9 +89,9 @@ def load_secret(env_var: str, *, required: bool = True) -> Secret | None:
 def redact(text: str) -> str:
     for value in SECRETS.values():
         text = text.replace(value, REDACTED)
-    text = _PATTERNS[0].sub(REDACTED, text)
-    text = _PATTERNS[1].sub(lambda m: f"{m.group(1)}{m.group(2)}{REDACTED}", text)
-    return _PATTERNS[2].sub(f"Bearer {REDACTED}", text)
+    text = _PRIVATE_KEY.sub(REDACTED, text)
+    text = _BEARER.sub(f"Bearer {REDACTED}", text)
+    return _KEY_VALUE.sub(lambda m: f"{m.group(1)}{m.group(2)}{REDACTED}", text)
 
 
 def redact_mapping(data: Any) -> Any:
