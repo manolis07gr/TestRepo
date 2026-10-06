@@ -374,3 +374,59 @@ def settlement_world(
             rows.append((e, bid, bid, bid, bid, ask, ask, ask, ask, 100.0))
         candles[m.ticker] = rows
     return markets, candles, coinbase, dvol
+
+
+# ----------------------------------------------------------------------------- ladder check
+
+LADDER_C0 = 1_767_229_200  # 2026-01-01T01:00:00Z, on the hour
+
+
+def ladder_m15(i: int, strike: float, value: float) -> SettledMarket:
+    close = LADDER_C0 + 3600 * i
+    return SettledMarket(
+        ticker=f"KXBTC15M-H{i}",
+        event_ticker=f"E{i}",
+        series="KXBTC15M",
+        open_ts=close - 900,
+        close_ts=close,
+        strike_type="greater_or_equal",
+        floor_strike=strike,
+        cap_strike=None,
+        result="yes" if value >= strike else "no",
+        expiration_value=value,
+        archived=False,
+    )
+
+
+def ladder_candles(open_ts: int, quotes: dict[int, tuple[float, float]]) -> list[tuple[Any, ...]]:
+    """Candles 0..15 (end = open + 60 k) with the given (bid, ask) closes; default 0.49/0.51."""
+    rows = []
+    for k in range(16):
+        bid, ask = quotes.get(k, (0.49, 0.51))
+        rows.append((open_ts + 60 * k, bid, bid, bid, bid, ask, ask, ask, ask, 10.0))
+    return rows
+
+
+def ladder_world(
+    n: int, overrides: dict[int, dict[str, dict[int, tuple[float, float]]]] | None = None
+) -> tuple[list[SettledMarket], dict[str, Any], dict[int, dict[str, Any]]]:
+    """n hours; 15-minute strike 100.50 between ladder strikes 99.99 / 100.99. Consistent
+    default quotes: lo 0.60/0.62, 15-minute 0.49/0.51, hi 0.38/0.40."""
+    overrides = overrides or {}
+    markets, candles, ladder = [], {}, {}
+    for i in range(n):
+        m = ladder_m15(i, 100.50, 100.70)
+        markets.append(m)
+        o = overrides.get(i, {})
+        candles[m.ticker] = ladder_candles(m.open_ts, o.get("m15", {}))
+        lo_q = dict.fromkeys(range(16), (0.6, 0.62)) | o.get("lo", {})
+        hi_q = dict.fromkeys(range(16), (0.38, 0.4)) | o.get("hi", {})
+        ladder[m.close_ts] = {
+            "close_ts": m.close_ts,
+            "event": f"KXBTCD-{i}",
+            "k15": 100.50,
+            "spacing": 1,
+            "lo": {"ticker": "lo", "strike": 99.99, "candles": ladder_candles(m.open_ts, lo_q)},
+            "hi": {"ticker": "hi", "strike": 100.99, "candles": ladder_candles(m.open_ts, hi_q)},
+        }
+    return markets, candles, ladder

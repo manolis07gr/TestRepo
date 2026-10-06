@@ -250,7 +250,8 @@ def cmd_report(args: argparse.Namespace) -> int:
     result = json.loads(Path(args.evaluation).read_text())
     live = json.loads(Path(args.live).read_text()) if args.live else None
     settle = json.loads(Path(args.settlement).read_text()) if args.settlement else None
-    paths = write_reports(result, Path(args.out), live=live, settle=settle)
+    ladder = json.loads(Path(args.ladder).read_text()) if args.ladder else None
+    paths = write_reports(result, Path(args.out), live=live, settle=settle, ladder=ladder)
     _print({"reports": [str(p) for p in paths]})
     return 0
 
@@ -379,6 +380,9 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument(
         "--settlement",
         help="hold-to-settlement summary.json (scripts/settlement_study.py analyze)",
+    )
+    s.add_argument(
+        "--ladder", help="ladder-check summary.json (scripts/settlement_study.py ladder)"
     )
     s.set_defaults(func=cmd_report)
 

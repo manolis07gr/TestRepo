@@ -336,6 +336,43 @@ def test_cli_report_accepts_a_settlement_summary(
     assert "reports" in capsys.readouterr().out
 
 
+def _ladder_summary(gaps: bool) -> dict[str, Any]:
+    from cma.research import ladder_check as lc
+    from tests.factories import ladder_world
+
+    over = {i: {"m15": {3: (0.20, 0.22), 4: (0.20, 0.22)}} for i in range(0, 50, 10)}
+    return lc.analyze(*ladder_world(50, over if gaps else None))
+
+
+def test_report_with_ladder_summary_adds_the_same_venue_call(tmp_path: Path) -> None:
+    result = _minimal_result()
+    none = _ladder_summary(gaps=False)
+    assert decision_summary(result, None, None, none)["ladder_decision"] == "REJECT"
+    text = render_markdown(result, None, None, none)
+    assert "Same-venue consistency: 15-minute markets vs the hourly ladder" in text
+    assert "15-minute markets vs the hourly ladder: `REJECT`" in text
+    assert "Same-venue consistency between the 15-minute markets" in text
+    page = write_reports(result, tmp_path, ladder=none)[2].read_text()
+    assert 'id="ladder"' in page and "Kalshi against itself" in page
+    assert "don&#x27;t disagree either" in page
+    some = _ladder_summary(gaps=True)
+    assert decision_summary(result, None, None, some)["ladder_decision"] == "LIVE_SIZE_CHECK"
+    page = write_reports(result, tmp_path, ladder=some)[2].read_text()
+    assert "do sometimes disagree" in page and "LIVE SIZE CHECK" in page
+
+
+def test_cli_report_accepts_a_ladder_summary(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    ev, ld = tmp_path / "evaluation.json", tmp_path / "ladder.json"
+    ev.write_text(json.dumps(_minimal_result()))
+    ld.write_text(json.dumps(_ladder_summary(gaps=False), default=str))
+    out = tmp_path / "out"
+    assert main(["report", "--evaluation", str(ev), "--out", str(out), "--ladder", str(ld)]) == 0
+    assert json.loads((out / "decision.json").read_text())["ladder_decision"] == "REJECT"
+    assert "reports" in capsys.readouterr().out
+
+
 def test_cli_parser_hurdle_live_and_db(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
     parser = build_parser()
     assert parser.parse_args(["hurdle"]).command == "hurdle"

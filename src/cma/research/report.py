@@ -385,10 +385,58 @@ def settlement_markdown(settle: Mapping[str, Any]) -> list[str]:
     return out
 
 
+def ladder_summary_text(ladder: Mapping[str, Any]) -> str:
+    """'3 of 6,612 hours (0.05%) offered a riskless pair ..., median +0.40c per pair'."""
+    d, o = ladder.get("data", {}), ladder.get("opportunities", {})
+    share = o.get("share_of_hours")
+    med = (o.get("profit_fill_c") or {}).get("median")
+    return (
+        f"{_n(o.get('count'))} of {_n(d.get('paired_hours'))} hours "
+        f"({_f(100 * (share or 0), 2)}%) offered a riskless pair after both fees that was still "
+        "there a minute later" + (f", median {med:+.2f}¢ per pair" if med is not None else "")
+    )
+
+
+def ladder_markdown(ladder: Mapping[str, Any]) -> list[str]:
+    """Condensed same-venue consistency section (full tables in reports/ladder_check)."""
+    d = ladder.get("data", {})
+    dec = ladder.get("decision", {})
+    ds = ladder.get("description", {})
+    crossed = ds.get("pre_fee_crossed_share") or {}
+    best = ds.get("best_after_fee_gap_per_hour_c") or {}
+    out = ["## Same-venue consistency: 15-minute markets vs the hourly ladder", ""]
+    out.append(
+        "* Every hour the `KXBTC15M` market closing on the hour and the `KXBTCD` strikes just "
+        "below and above its strike settle on the same index average, so their prices must "
+        "nest. Three pairs of contracts pay at least $1 in every outcome; any of them bought "
+        "for less than $1 after both taker fees is a riskless profit."
+    )
+    out.append(
+        f"* {_n(d.get('paired_hours'))} paired hours, {str(d.get('first_close', ''))[:10]} to "
+        f"{str(d.get('last_close', ''))[:10]}: {ladder_summary_text(ladder)}."
+    )
+    if crossed:
+        out.append(
+            "* Before fees the prices crossed in "
+            + ", ".join(f"{_f(100 * (v or 0), 3)}%" for v in crossed.values())
+            + " of minutes for the three pairs; the best after-fee result per hour has median "
+            f"{_f(best.get('median'), 2)}¢ and 99th percentile {_f(best.get('p99'), 2)}¢ "
+            "(negative = no arbitrage)."
+        )
+    out.append(
+        f"* **Decision `{dec.get('decision')}`** by the rule fixed before the first run "
+        "(docs/EDGE_EVALUATION_METHOD.md section 8). Full tables: "
+        "`reports/ladder_check/summary.md`."
+    )
+    out.append("")
+    return out
+
+
 def decision_summary(
     result: Mapping[str, Any],
     live: Mapping[str, Any] | None = None,
     settle: Mapping[str, Any] | None = None,
+    ladder: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
     bases = result.get("base_cases", [])
     dec = (live or {}).get("decision") or {}
@@ -414,6 +462,10 @@ def decision_summary(
         out["settlement_period"] = {
             k: (settle.get("data") or {}).get(k) for k in ("in_sample", "out_of_sample")
         }
+    if ladder:
+        ld = ladder.get("decision") or {}
+        out["ladder_decision"] = ld.get("decision")
+        out["ladder_reasons"] = ld.get("reasons", [])
     return out
 
 
@@ -421,6 +473,7 @@ def render_markdown(
     result: Mapping[str, Any],
     live: Mapping[str, Any] | None = None,
     settle: Mapping[str, Any] | None = None,
+    ladder: Mapping[str, Any] | None = None,
 ) -> str:
     man = result.get("manifest", {})
     plan = result.get("plan", {})
@@ -473,6 +526,12 @@ def render_markdown(
             f"options-style model favours: {settlement_edge_summary(settle)}. See "
             "*Hold-to-settlement check* below."
         )
+    if ladder:
+        w(
+            f"* **Same venue, 15-minute markets vs the hourly ladder: "
+            f"`{(ladder.get('decision') or {}).get('decision')}`** for riskless pairs between "
+            f"them: {ladder_summary_text(ladder)}. See *Same-venue consistency* below."
+        )
     for b in bases:
         w(
             f"* Synthetic base case `{b['label']}`: **`{b['decision']}`** — "
@@ -492,6 +551,8 @@ def render_markdown(
         lines += live_markdown(live)
     if settle:
         lines += settlement_markdown(settle)
+    if ladder:
+        lines += ladder_markdown(ladder)
     w("## 1. Data, instruments and exclusions")
     w("")
     if kal:
@@ -937,6 +998,18 @@ def render_markdown(
             "* Hold-to-settlement on the options-style model is rejected on ten months of "
             "history; a new signal needs its own pre-registered test, not a re-tune of this one."
         )
+    ladder_dec = (ladder or {}).get("decision", {}).get("decision")
+    if ladder_dec == "LIVE_SIZE_CHECK":
+        w(
+            "* Same-venue gaps: measure the size behind the 15-minute / ladder gaps on live "
+            "books (`scripts/live_study.py collect` records both series) before any paper "
+            "trading; minute candles carry no depth."
+        )
+    elif ladder_dec == "REJECT":
+        w(
+            "* Same-venue consistency between the 15-minute markets and the hourly ladder is "
+            "rejected: the prices nest as they should, with no riskless gap after fees to take."
+        )
     for item in (
         steps_live
         if live
@@ -965,15 +1038,17 @@ def write_reports(
     *,
     live: Mapping[str, Any] | None = None,
     settle: Mapping[str, Any] | None = None,
+    ladder: Mapping[str, Any] | None = None,
 ) -> list[Path]:
-    """DECISION_REPORT.md, decision.json and the HTML page; ``live`` is a live-study summary
-    and ``settle`` a hold-to-settlement study summary."""
+    """DECISION_REPORT.md, decision.json and the HTML page; ``live`` is a live-study summary,
+    ``settle`` a hold-to-settlement study summary and ``ladder`` a ladder-check summary."""
     out_dir.mkdir(parents=True, exist_ok=True)
     md = out_dir / "DECISION_REPORT.md"
-    md.write_text(render_markdown(result, live, settle), encoding="utf-8")
+    md.write_text(render_markdown(result, live, settle, ladder), encoding="utf-8")
     js = out_dir / "decision.json"
-    js.write_text(json.dumps(decision_summary(result, live, settle), indent=1, default=str) + "\n")
+    summary = decision_summary(result, live, settle, ladder)
+    js.write_text(json.dumps(summary, indent=1, default=str) + "\n")
     from cma.research.report_html import write_html
 
-    page = write_html(result, out_dir, live=live, settle=settle)
+    page = write_html(result, out_dir, live=live, settle=settle, ladder=ladder)
     return [md, js, page]

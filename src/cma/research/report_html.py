@@ -850,6 +850,8 @@ def _ex_ante_table(base: Mapping[str, Any]) -> str:
 # ----------------------------------------------------------------------------- settlement
 
 
+MORE_DECISIONS = frozenset({"COLLECT_MORE_DATA", "LIVE_SIZE_CHECK"})
+
 SETTLE_GATE_LABELS = {
     "oos_mean_above_2se": "mean P&L more than two standard errors above zero",
     "fees_x1_5_positive": "still positive with fees × 1.5",
@@ -1190,10 +1192,105 @@ def _settlement_section(settle: Mapping[str, Any]) -> str:
 </section>"""
 
 
+# ----------------------------------------------------------------------------- ladder check
+
+LADDER_PAIR_LABELS = {
+    "a": "15-minute YES + ladder NO above",
+    "b": "15-minute NO + ladder YES below",
+    "c": "ladder YES below + ladder NO above",
+}
+
+
+def ladder_lede(ladder: Mapping[str, Any]) -> str:
+    """One sentence on the same-venue check for the page's lede."""
+    d, o = ladder.get("data", {}), ladder.get("opportunities", {})
+    dec = (ladder.get("decision") or {}).get("decision")
+    count, hours = o.get("count") or 0, d.get("paired_hours") or 0
+    med = (o.get("profit_fill_c") or {}).get("median")
+    if dec == "LIVE_SIZE_CHECK":
+        return (
+            "Kalshi's 15-minute markets and its hourly ladder do sometimes disagree: a riskless "
+            f"trade after both fees appeared in {_fmt(count, 0)} of {_fmt(hours, 0)} hours "
+            f"(median {_fmt(med, 2, True)}¢ per pair), and minute data cannot show how much size "
+            "was there."
+        )
+    return (
+        "Kalshi's own contracts don't disagree either: its 15-minute markets and the hourly "
+        "ladder that settles on the same number left a riskless trade after both fees, lasting "
+        f"a minute, in {_fmt(count, 0)} of {_fmt(hours, 0)} hours."
+    )
+
+
+def ladder_verdict(ladder: Mapping[str, Any]) -> tuple[str, str, str]:
+    d, o = ladder.get("data", {}), ladder.get("opportunities", {})
+    share = o.get("share_of_hours")
+    return (
+        "Same venue: 15-minute vs hourly ladder",
+        str((ladder.get("decision") or {}).get("decision", "REJECT")),
+        f"riskless after fees in {_fmt(o.get('count'), 0)} of {_fmt(d.get('paired_hours'), 0)} "
+        f"hours ({_fmt(100 * (share or 0), 2)}%)",
+    )
+
+
+def _ladder_section(ladder: Mapping[str, Any]) -> str:
+    d, o = ladder.get("data", {}), ladder.get("opportunities", {})
+    ds = ladder.get("description", {})
+    dec = ladder.get("decision") or {}
+    crossed = ds.get("pre_fee_crossed_share") or {}
+    after = ds.get("after_fee_positive_share") or {}
+    best = ds.get("best_after_fee_gap_per_hour_c") or {}
+    fill = o.get("profit_fill_c") or {}
+    by_pair = o.get("by_pair") or {}
+    share = o.get("share_of_hours")
+    max_crossed = max((v or 0.0) for v in crossed.values()) if crossed else None
+    tiles = f"""
+<div class="tiles">
+  <div class="tile"><span class="label">Hours with a riskless trade</span>
+    <span class="value">{_fmt(100 * (share or 0), 2)}%</span>
+    <span class="note">{_fmt(o.get("count"), 0)} of {_fmt(d.get("paired_hours"), 0)} hours, after both taker fees and still there a minute later</span></div>
+  <div class="tile"><span class="label">Median riskless profit</span>
+    <span class="value">{_fmt(fill.get("median"), 2, True)}¢</span>
+    <span class="note">per pair of contracts at the next minute's quotes; each pair pays at least $1</span></div>
+  <div class="tile"><span class="label">Prices crossed before fees</span>
+    <span class="value">{_fmt(100 * max_crossed if max_crossed is not None else None, 2)}%</span>
+    <span class="note">of minutes, for the pair that crossed most often (fees aside)</span></div>
+  <div class="tile"><span class="label">Best hour after fees</span>
+    <span class="value {_cls(best.get("max"))}">{_fmt(best.get("max"), 2, True)}¢</span>
+    <span class="note">median hour {_fmt(best.get("median"), 2, True)}¢; negative means no arbitrage</span></div>
+</div>"""
+    rows = "".join(
+        f"<tr><td>{html.escape(LADDER_PAIR_LABELS[p])}</td>"
+        f"<td>{_fmt(100 * (crossed.get(p) or 0), 3)}%</td>"
+        f"<td>{_fmt(100 * (after.get(p) or 0), 3)}%</td>"
+        f"<td>{_fmt(by_pair.get(p, 0), 0)}</td></tr>"
+        for p in LADDER_PAIR_LABELS
+    )
+    reasons = "".join(f"<li>{html.escape(r)}</li>" for r in dec.get("reasons", []))
+    return f"""
+<section id="ladder">
+  <h2>Kalshi against itself: 15-minute markets vs the hourly ladder</h2>
+  <p class="memo">{html.escape(ladder_lede(ladder))}</p>
+  <p class="memo" style="color:var(--ink-2);font-size:14px">Every hour, the 15-minute market
+  closing on the hour (YES if BTC's settlement average is at least its strike) and the hourly
+  ladder's strikes just below and above that strike settle on the same index average, so their
+  prices must nest. Three pairs of contracts pay at least $1 whatever happens; buying one for
+  less than $1 after both taker fees is a riskless profit. {_fmt(d.get("paired_hours"), 0)} hours,
+  {html.escape(str(d.get("first_close", ""))[:10])} to {html.escape(str(d.get("last_close", ""))[:10])},
+  1-minute closing quotes; a rule fixed before the first run decides.</p>
+  {tiles}
+  <div class="tablebox"><table>
+    <thead><tr><th>Pair</th><th>Minutes crossed before fees</th><th>Minutes riskless after fees</th>
+    <th>Hours taken (lasted a minute)</th></tr></thead>
+    <tbody>{rows}</tbody></table></div>
+  <ul class="plain memo" style="font-size:13.5px;color:var(--ink-2)">{reasons}</ul>
+</section>"""
+
+
 def render_fragment(
     result: Mapping[str, Any],
     live: Mapping[str, Any] | None = None,
     settle: Mapping[str, Any] | None = None,
+    ladder: Mapping[str, Any] | None = None,
 ) -> str:
     man = result.get("manifest", {})
     plan = result.get("plan", {})
@@ -1278,6 +1375,8 @@ def render_fragment(
         )
     if settle:
         lede = f"{lede} {settlement_lede(settle)}"
+    if ladder:
+        lede = f"{lede} {ladder_lede(ladder)}"
     verdicts = [
         live_verdict(live)
         if live
@@ -1289,6 +1388,8 @@ def render_fragment(
     ]
     if settle:
         verdicts.append(settlement_verdict(settle))
+    if ladder:
+        verdicts.append(ladder_verdict(ladder))
     for b in bases:
         label = (
             "Synthetic base case, Kalshi fees"
@@ -1303,7 +1404,7 @@ def render_fragment(
         verdicts.append((label, b["decision"], why))
 
     def vclass(d: str) -> str:
-        return "reject" if d == "REJECT" else ("more" if d == "COLLECT_MORE_DATA" else "")
+        return "reject" if d == "REJECT" else ("more" if d in MORE_DECISIONS else "")
 
     verdict_html = "".join(
         f'<div class="verdict"><span class="k">{html.escape(k)}</span>'
@@ -1501,6 +1602,7 @@ def render_fragment(
 </section>
 {_live_section(live) if live else ""}
 {_settlement_section(settle) if settle else ""}
+{_ladder_section(ladder) if ladder else ""}
 {_frontier_section(frontier)}
 {_attribution_section(result, crit)}
 {base_html}
@@ -1537,9 +1639,10 @@ def write_html(
     fragment: bool = False,
     live: Mapping[str, Any] | None = None,
     settle: Mapping[str, Any] | None = None,
+    ladder: Mapping[str, Any] | None = None,
 ) -> Path:
     out_dir.mkdir(parents=True, exist_ok=True)
-    body = render_fragment(result, live, settle)
+    body = render_fragment(result, live, settle, ladder)
     if fragment:
         path = out_dir / "edge_evaluation.fragment.html"
         path.write_text(body, encoding="utf-8")
