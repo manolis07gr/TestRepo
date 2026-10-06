@@ -13,7 +13,7 @@ from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import Any
 
-from cma.research.report import positive_maker_lags
+from cma.research.report import positive_maker_lags, risk_overlay_sentence
 
 LAT = (0, 100, 250, 500, 1000, 2000, 5000)
 EVIDENCE = (
@@ -593,6 +593,8 @@ def render_fragment(result: Mapping[str, Any]) -> str:
   {_grid_table(kal, "markout_60s_table")}
   <h3>Expected net ¢ per contract under the true model</h3>
   {_ex_ante_table(kal)}
+  <p class="memo">Position limits apply throughout; the daily loss stop is off in the edge study
+  so one bad hour cannot silence the rest of the sample. {html.escape(risk_overlay_sentence(kal))}</p>
   <p class="memo">Family-level bootstrap 95% interval for mean net P&amp;L per hourly ladder:
   <b>[{_fmt(ci.get("lower"), 2, True)}, {_fmt(ci.get("upper"), 2, True)}]</b> around
   {_fmt(ci.get("mean"), 2, True)} (n = {ci.get("n")} ladders). Expected edge at the declared

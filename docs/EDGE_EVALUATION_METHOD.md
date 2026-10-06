@@ -34,6 +34,10 @@ takers 0.07·p(1−p) per contract; Polymarket adds a 150 ms taker delay.
 Every run replays the synthetic event stream through the production code: normalization,
 observed books, watermarked features, the fair-value strategy (semantics-exact 60 s
 average), signal gates, risk limits, the latency-aware simulator and Decimal accounting.
+Position limits (contract / family / portfolio exposure) stay on. The NAV-triggered daily
+loss stop is disabled in the edge study: it is a loss control, not an edge source, and it
+truncates samples path-dependently (one bad hour silences the rest of the UTC day). The
+base case re-runs its criterion cell with the production stop on and reports what it did.
 
 ## 4. Metrics that separate edge from luck
 

@@ -113,6 +113,24 @@ def _attribution_sources(
     return out
 
 
+def risk_overlay_sentence(base: Mapping[str, Any]) -> str:
+    ov = base.get("production_risk_overlay") or {}
+    if not ov:
+        return ""
+    stops = ov.get("daily_stops") or []
+    head = (
+        f"With the production {ov.get('daily_loss_stop_pct', 2):g}% daily loss stop on, the "
+        f"{ov.get('latency_ms')} ms base run"
+    )
+    if not stops:
+        return f"{head} never hit the stop (net P&L {_f(ov.get('net_pnl'))})."
+    return (
+        f"{head} hit the stop at {str(stops[0])[11:16]} UTC and traded "
+        f"{ov.get('families_traded')} of {ov.get('families')} hourly ladders "
+        f"(net P&L {_f(ov.get('net_pnl'))})."
+    )
+
+
 def decision_summary(result: Mapping[str, Any]) -> dict[str, Any]:
     bases = result.get("base_cases", [])
     return {
@@ -266,6 +284,12 @@ def render_markdown(result: Mapping[str, Any]) -> str:
         ]
         w(_table(["metric", "value"], rows))
         ci = kal.get("ci_mean_position_pnl", {})
+        w("")
+        w(
+            "Risk limits: position limits (contract / family / portfolio exposure) apply; the "
+            "NAV-triggered daily loss stop is disabled in the edge study so one bad hour cannot "
+            "silence the rest of the sample. " + risk_overlay_sentence(kal)
+        )
         w("")
         w(
             f"Bootstrap 95% CI of mean P&L per {ci.get('unit', 'unit')} (n={ci.get('n')}): "

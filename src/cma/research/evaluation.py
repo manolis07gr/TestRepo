@@ -46,7 +46,7 @@ from cma.backtest.experiment import (
     validate_publication,
 )
 from cma.config import AppConfig, CostScenario
-from cma.domain.enums import BookSide, Decision, Venue
+from cma.domain.enums import BookSide, Decision, ReasonCode, Venue
 from cma.domain.errors import ExperimentPublicationError
 from cma.domain.models import BookDeltaEvent, BookSnapshotEvent, MarketEvent
 from cma.domain.time import NS_PER_MS, NS_PER_S, iso_from_ns
@@ -99,13 +99,21 @@ class EvaluationPlan:
 EVAL_TTL_MS = 10_000  # strategy TTL for latency stress: arrival up to 10 s after decision
 
 
-def _cfg(min_edge_bps: int = 100) -> AppConfig:
-    return AppConfig.model_validate(
-        {
-            "mode": "BACKTEST",
-            "signal": {"min_net_edge_bps": min_edge_bps, "ttl_ms": EVAL_TTL_MS},
-        }
-    )
+# The edge study measures what the strategy's trades are worth, so the NAV-triggered daily
+# loss stop (a loss control, not a source of edge) is disabled: it would truncate samples
+# path-dependently (one bad hour silences the rest of the UTC day). Position limits stay on.
+# What the production stop would have done is reported separately (risk overlay).
+RESEARCH_DAILY_STOP_PCT = 100
+
+
+def _cfg(min_edge_bps: int = 100, *, production_risk: bool = False) -> AppConfig:
+    data: dict[str, Any] = {
+        "mode": "BACKTEST",
+        "signal": {"min_net_edge_bps": min_edge_bps, "ttl_ms": EVAL_TTL_MS},
+    }
+    if not production_risk:
+        data["risk"] = {"daily_loss_stop_pct": RESEARCH_DAILY_STOP_PCT}
+    return AppConfig.model_validate(data)
 
 
 def _market_params(
@@ -427,19 +435,57 @@ def _grid_task(
     return out, list(_position_pnls(core).values())
 
 
-def _model_risk_task(args: tuple[dict[str, Any], list[int], int, int, int]) -> dict[str, Any]:
-    params, window, warmup_ns, latency, edge_bps = args
+def _risk_overlay_task(
+    args: tuple[dict[str, Any], dict[str, Any], int, list[int], int, int, dict[str, int]],
+) -> dict[str, Any]:
+    """The criterion run again with the PRODUCTION daily loss stop switched on."""
+    params, strat_params, edge_bps, window, warmup_ns, latency, taker_delay = args
+    ds, _market = synthetic_dataset(params)
+    part = _window_with_warmup(ds, window[0], window[1], warmup_ns)
+    cfg = _cfg(edge_bps, production_risk=True)
+    r, core = run_single(
+        part,
+        StrategySpec("fv_taker", "1.0", strat_params),
+        cfg,
+        latency_ms=latency,
+        cost=CostScenario(name="base"),
+        seed=int(params["seed"]),
+        venue_taker_delay_ms={Venue(k): v for k, v in taker_delay.items()},
+    )
+    families = {core._family_of(c.contract_id) or c.contract_id for c in part.contracts}
+    traded = {core._family_of(f.contract_id) or f.contract_id for f in core.records.fills}
+    return {
+        "daily_loss_stop_pct": float(cfg.risk.daily_loss_stop_pct),
+        "latency_ms": latency,
+        "net_pnl": r.metrics.net_pnl,
+        "contracts": r.metrics.filled_contracts,
+        "families_traded": len(traded),
+        "families": len(families),
+        "daily_stops": [
+            iso_from_ns(ts) for ts, code, _ in core.risk.breaches if code is ReasonCode.DAILY_STOP
+        ],
+    }
+
+
+def _model_risk_task(
+    args: tuple[dict[str, Any], list[int], int, int, int, float, dict[str, int]],
+) -> dict[str, Any]:
+    params, window, warmup_ns, latency, edge_bps, vol_mult, taker_delay = args
     ds, market = synthetic_dataset(params)
     part = _window_with_warmup(ds, window[0], window[1], warmup_ns)
     out = {}
-    for label, strat in (("implied_vol", BASE_STRATEGY), ("realized_vol", REALIZED_VOL_STRATEGY)):
+    for label, strat_params in (
+        ("implied_vol", {"vol_multiplier": vol_mult, "vol_instrument": IV_INSTRUMENT}),
+        ("realized_vol", {"vol_multiplier": vol_mult}),
+    ):
         r, core = run_single(
             part,
-            strat,
+            StrategySpec("fv_taker", "1.0", strat_params),
             _cfg(edge_bps),
             latency_ms=latency,
             cost=CostScenario(name="base"),
             seed=int(params["seed"]),
+            venue_taker_delay_ms={Venue(k): v for k, v in taker_delay.items()},
         )
         ex = ex_ante_edge(core, market)
         out[label] = {
@@ -487,6 +533,7 @@ class BaseCaseResult:
     ex_ante: dict[str, dict[str, float]] = field(default_factory=dict)
     model_risk: list[dict[str, Any]] = field(default_factory=list)
     attribution: dict[str, Any] = field(default_factory=dict)
+    risk_overlay: dict[str, Any] = field(default_factory=dict)
 
 
 def run_base_case(
@@ -592,11 +639,31 @@ def run_base_case(
             pool.map(
                 _model_risk_task,
                 [
-                    (params, parts["final_test"], warmup_ns, lat, int(selected["min_net_edge_bps"]))
+                    (
+                        params,
+                        parts["final_test"],
+                        warmup_ns,
+                        lat,
+                        int(selected["min_net_edge_bps"]),
+                        float(selected["vol_multiplier"]),
+                        delay,
+                    )
                     for lat in plan.latencies_ms
                 ],
             )
         )
+        risk_overlay = pool.submit(
+            _risk_overlay_task,
+            (
+                params,
+                strat_params,
+                int(selected["min_net_edge_bps"]),
+                parts["final_test"],
+                warmup_ns,
+                plan.criterion_latency_ms,
+                delay,
+            ),
+        ).result()
     _SHARED.clear()
     grid = _grid_from_dicts([o[0] for o in outs])
     ex_ante = {f"{o[0]['cost']}@{o[0]['latency_ms']}": o[0]["ex_ante"] for o in outs}
@@ -673,6 +740,7 @@ def run_base_case(
         final_test_access_log=access_log,
         ex_ante=ex_ante,
         attribution=attribution,
+        risk_overlay=risk_overlay,
         model_risk=model_risk,
     )
 
@@ -910,6 +978,7 @@ def run_evaluation(out_dir: Path, plan: EvaluationPlan | None = None) -> dict[st
             "ci_mean_position_pnl": b.ci,
             "ex_ante": b.ex_ante,
             "edge_attribution": b.attribution,
+            "production_risk_overlay": b.risk_overlay,
             "model_risk": b.model_risk,
             "markout_60s_table": {
                 c: {
