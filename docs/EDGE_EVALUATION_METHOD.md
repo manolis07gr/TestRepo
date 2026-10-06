@@ -115,3 +115,52 @@ collecting machine (what that machine could actually have acted on).
 `summary.md`; `cma report --evaluation reports/edge_evaluation/evaluation.json --out
 reports/edge_evaluation --live reports/live_study/summary.json` puts the live call and a
 real-market section into the decision report, `decision.json` and the HTML page.
+
+## 7. Hold-to-settlement check on history (`cma.research.settlement_study`)
+
+The live study tests a *latency* taker. Its no-move baseline also showed the options-style
+model disagreeing with Kalshi's quotes by about a cent after fees at random times; that gap
+does not close within seconds, so the question is whether it pays **at settlement**. History
+answers that without waiting: Kalshi serves every settled market with its result and
+1-minute YES bid/ask candles (`/historical/...` before its archive cutoff), and Coinbase and
+Deribit serve 1-minute BTC-USD candles and DVOL. `scripts/settlement_study.py fetch`
+downloads them (resumable, rate limited, signed when the key is set; it cannot trade).
+
+This method and the decision rule were fixed and committed **before the first run on the
+full history** (only a two-day sample was inspected, for data quality).
+
+1. **Contract.** `KXBTC15M`: YES pays $1 when the 60 s average of CF Benchmarks' BRTI before
+   close is at least the same average before open (the market's floor strike). Each
+   market's strike and settlement value are BRTI averages at quarter-hour marks.
+2. **Decision minutes.** Candles ending 2 to 13 minutes after open (the first minute starts
+   on an empty book; from 1 minute before close the settlement average is under way). The
+   book must be sane (0 < bid < ask < 1, spread <= 10¢) and the model fair value in 10–90¢.
+3. **Model.** Log-normal digital on the 60 s settlement average (`prob_above`,
+   `AVG_60S_BEFORE`). Spot: the Coinbase close at the decision minute times the
+   Coinbase-to-BRTI basis, the median over the last 8 quarter-hour marks (Coinbase minute
+   typical price vs the BRTI mark; only marks already published). Volatility: Deribit DVOL
+   (primary) or the trailing 60-minute realised volatility of Coinbase 1-minute returns.
+4. **Trade.** In each market, the first decision minute where the model's edge after the
+   Kalshi taker fee on the better side (buy YES at the ask, or NO at 1 − bid) is at least
+   θ ∈ {0, 1, 2, 3, 5, 10}¢. One trade per market, 100 contracts, held to settlement.
+5. **Fill.** Primary: the quote at the end of the *next* minute. A mispricing that only
+   lasted until the next quote update is not one a minute-scale strategy can trade, and this
+   removes the stale-quote effect of minute bars. Optimistic: the decision minute's quote.
+   Stress: two minutes later.
+6. **Split and selection.** Chronological: the first 60% of markets by close time are
+   in-sample, the rest out-of-sample. The specification (volatility input × θ) with the
+   highest in-sample t-statistic among those with at least 200 trades is the one tested out
+   of sample. Standard errors cluster by UTC day.
+7. **Decision.** `FORWARD_PAPER_CANDIDATE` when the selected specification's out-of-sample
+   mean P&L is more than two standard errors above zero and every gate holds: still
+   positive with fees × 1.5 and with the two-minute fill, at least 200 trades, no single day
+   above 70% of the P&L, at least 60% of the neighbouring thresholds profitable, positive in
+   at least half of the months. `REJECT` when its out-of-sample mean is <= 0; otherwise
+   `COLLECT_MORE_DATA`. Paper trading, not this test, is the next step after a pass.
+8. **Diagnostics.** Brier score and log loss of Kalshi's mid and of the model at 10, 5 and 2
+   minutes before close; the regression of outcomes on the mid and the model–mid gap (does
+   the model add anything the price does not already contain?); calibration by price
+   bucket, including the favourite–longshot ends.
+
+`scripts/settlement_study.py analyze --out reports/settlement_study` writes `summary.json`
+and `summary.md`.
