@@ -168,20 +168,39 @@ def test_rsa_pss_signature_verifies() -> None:  # pragma: no cover - environment
     )
 
 
-def test_normalize_pem_accepts_how_keys_survive_settings_fields() -> None:
-    body = "QUJD" * 40  # 160 base64 chars, not a real key
-    canonical = (
-        "-----BEGIN RSA PRIVATE KEY-----\n"
+def _fake_pem(label: str, der: bytes) -> tuple[str, str]:
+    body = base64.b64encode(der).decode()
+    pem = (
+        f"-----BEGIN {label}-----\n"
         + "\n".join(body[i : i + 64] for i in range(0, len(body), 64))
-        + "\n-----END RSA PRIVATE KEY-----\n"
+        + f"\n-----END {label}-----\n"
     )
-    one_line_escaped = canonical.strip().replace("\n", "\\n")
-    one_line_spaces = canonical.strip().replace("\n", " ")
-    quoted_crlf = '"' + canonical.replace("\n", "\r\n") + '"'
-    b64 = base64.b64encode(canonical.encode()).decode()
-    for variant in (canonical, one_line_escaped, one_line_spaces, quoted_crlf, b64):
-        assert normalize_pem(variant) == canonical
+    return pem, body
+
+
+def test_normalize_pem_accepts_how_keys_survive_settings_fields() -> None:
+    # fake DER (not a real key): PKCS#1 starts SEQUENCE/version; PKCS#8 carries the RSA OID
+    pkcs1 = _fake_pem("RSA PRIVATE KEY", bytes([0x30, 0x82, 0x01, 0x00, 2, 1, 0]) + bytes(120))
+    pkcs8 = _fake_pem(
+        "PRIVATE KEY",
+        bytes([0x30, 0x82, 0x01, 0x00, 2, 1, 0, 0x30, 0x0D])
+        + bytes.fromhex("06092a864886f70d010101")
+        + bytes(110),
+    )
+    for canonical, body in (pkcs1, pkcs8):
+        variants = (
+            canonical,
+            canonical.strip().replace("\n", "\\n"),  # one line, literal \n escapes
+            canonical.strip().replace("\n", " "),  # one line, breaks became spaces
+            '"' + canonical.replace("\n", "\r\n") + '"',  # quoted, CRLF
+            base64.b64encode(canonical.encode()).decode(),  # whole file base64
+            body,  # only the middle lines, run together
+            " ".join(body[i : i + 64] for i in range(0, len(body), 64)),  # middle lines, spaces
+        )
+        for variant in variants:
+            assert normalize_pem(variant) == canonical
     assert normalize_pem("not a key") == "not a key"
+    assert normalize_pem("abcd") == "abcd"
 
 
 def test_signer_reads_inline_pem_env(monkeypatch: pytest.MonkeyPatch) -> None:

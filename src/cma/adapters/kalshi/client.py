@@ -69,28 +69,40 @@ def signing_available() -> bool:
 _PEM_RE = re.compile(r"-----BEGIN ([A-Z ]+)-----(.*?)-----END \1-----", re.DOTALL)
 
 
+_RSA_ENCRYPTION_OID = bytes.fromhex("06092a864886f70d010101")  # marks a PKCS#8 RSA key
+
+
+def _pem(label: str, body: str) -> str:
+    lines = [body[i : i + 64] for i in range(0, len(body), 64)]
+    return "\n".join([f"-----BEGIN {label}-----", *lines, f"-----END {label}-----"]) + "\n"
+
+
 def normalize_pem(text: str) -> str:
     """Canonical PEM from however a key survived a settings field or ``.env`` file.
 
     Accepts a normal multi-line PEM, one line with literal ``\\n`` escapes, one line whose
-    newlines became spaces, or the whole PEM base64-encoded. Never logs the key.
+    newlines became spaces, the whole PEM base64-encoded, or only the base64 body between
+    the BEGIN/END lines (the shortest form to paste). Never logs the key.
     """
     value = text.strip().strip("'\"").strip()
     if "-----BEGIN" not in value:
+        compact = "".join(value.replace("\\n", "").split())
         try:
-            decoded = base64.b64decode(value, validate=False).decode("utf-8")
-        except (ValueError, UnicodeDecodeError):
+            decoded = base64.b64decode(compact, validate=True)
+        except ValueError:
             return value
-        if "-----BEGIN" not in decoded:
+        if b"-----BEGIN" in decoded:
+            value = decoded.decode("utf-8", errors="replace").strip()
+        elif len(decoded) > 64 and decoded[0] == 0x30:  # bare DER body: an ASN.1 SEQUENCE
+            label = "PRIVATE KEY" if _RSA_ENCRYPTION_OID in decoded[:40] else "RSA PRIVATE KEY"
+            return _pem(label, compact)
+        else:
             return value
-        value = decoded.strip()
     value = value.replace("\\r\\n", "\n").replace("\\n", "\n").replace("\r\n", "\n")
     m = _PEM_RE.search(value)
     if m is None:
         return value
-    label, body = m.group(1), "".join(m.group(2).split())
-    lines = [body[i : i + 64] for i in range(0, len(body), 64)]
-    return "\n".join([f"-----BEGIN {label}-----", *lines, f"-----END {label}-----"]) + "\n"
+    return _pem(m.group(1), "".join(m.group(2).split()))
 
 
 def _rsa_pss_sha256_signer(private_key_pem: str) -> Callable[[bytes], bytes]:
