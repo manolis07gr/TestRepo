@@ -64,6 +64,55 @@ def _base_cell(base: Mapping[str, Any], cost: str, lat: int) -> Mapping[str, Any
     return None
 
 
+def positive_maker_lags(
+    frontier: Sequence[Mapping[str, Any]], latency_ms: int, competitor: Any
+) -> list[float]:
+    """Maker lags whose implied-vol expected edge is > 0 at ``latency_ms``.
+
+    ``competitor``: None = scenarios without a competitor; "any" = with one.
+    """
+    out = set()
+    for r in frontier:
+        if r.get("model", "implied_vol") != "implied_vol" or int(r["latency_ms"]) != latency_ms:
+            continue
+        has_comp = r["competitor_ms"] is not None
+        if (competitor is None) == has_comp:
+            continue
+        v = r.get("expected_c_per_contract")
+        if v is not None and math.isfinite(float(v)) and float(v) > 0:
+            out.add(float(r["mm_lag_ms"]))
+    return sorted(out)
+
+
+def _attribution_sources(
+    result: Mapping[str, Any], latency_ms: int
+) -> list[tuple[str, Mapping[str, Any], tuple[str, ...]]]:
+    """Base cases (both tables) and frontier scenarios with a competitor (edge buckets)."""
+    both = ("by_perceived_edge", "by_time_to_expiry")
+    out: list[tuple[str, Mapping[str, Any], tuple[str, ...]]] = []
+    for b in result.get("base_cases", []):
+        attr = (b.get("edge_attribution") or {}).get(f"base@{latency_ms}")
+        if attr:
+            out.append((f"Base case `{b['label']}` (final test, {latency_ms} ms)", attr, both))
+    rows = [
+        r
+        for r in result.get("frontier", [])
+        if r.get("model", "implied_vol") == "implied_vol"
+        and r.get("attribution")
+        and r["competitor_ms"] is not None
+    ]
+    for r in sorted(rows, key=lambda r: float(r["mm_lag_ms"])):
+        out.append(
+            (
+                f"Frontier: maker lag {r['mm_lag_ms']:g} ms, competitor "
+                f"{r['competitor_ms']:g} ms, {r['latency_ms']} ms",
+                r["attribution"],
+                ("by_perceived_edge",),
+            )
+        )
+    return out
+
+
 def decision_summary(result: Mapping[str, Any]) -> dict[str, Any]:
     bases = result.get("base_cases", [])
     return {
@@ -177,7 +226,8 @@ def render_markdown(result: Mapping[str, Any]) -> str:
         mt = kal.get("multiple_testing", {})
         w(
             f"* Parameter search on **validation only**: {mt.get('n_hypotheses')} settings "
-            f"(min net edge × vol multiplier), each logged as a hypothesis; Benjamini–Hochberg at "
+            f"(min net edge × vol multiplier), each logged as a hypothesis "
+            f"({mt.get('test', 'one-sided t-test')}); Benjamini–Hochberg at "
             f"α={mt.get('alpha')}: {mt.get('n_rejected')} rejections."
         )
         for line in kal.get("final_test_access_log", []):
@@ -231,6 +281,12 @@ def render_markdown(result: Mapping[str, Any]) -> str:
         w("Realized net P&L ($):")
         w("")
         w(_grid_rows(kal, "net_pnl_table"))
+        w("")
+        w(
+            "Realized hold-to-settlement P&L is dominated by where BTC finished each hour, and "
+            "each cost scenario trades a different subset of opportunities, so this table need "
+            "not be monotone in costs. The mark-out and ex-ante tables below measure edge."
+        )
         w("")
         w(
             "Fee-adjusted 60 s mark-out P&L ($) — low-variance edge estimate also available on "
@@ -288,7 +344,37 @@ def render_markdown(result: Mapping[str, Any]) -> str:
         w(_grid_rows(poly, "net_pnl_table"))
         w("")
 
-    w("## 6. Lead-lag estimates and stability by regime")
+    w("## 6. Where the edge goes (simulation-only attribution)")
+    w("")
+    w(
+        "Each fill's net edge as the signal saw it (model fair value minus price, fees and "
+        "buffers) versus its true net edge at fill time (true fair value minus price minus "
+        "fee). When the perceived edge systematically exceeds the true edge, the strategy is "
+        "adversely selected: it trades most when its own inputs (stale spot, vol) are wrong."
+    )
+    w("")
+    for title, attr, keys in _attribution_sources(result, crit_lat):
+        w(f"**{title}**")
+        w("")
+        for key, label in (
+            ("by_perceived_edge", "perceived net edge"),
+            ("by_time_to_expiry", "time to expiry"),
+        ):
+            if key not in keys:
+                continue
+            rows = [
+                [
+                    r["bucket"],
+                    _f(r["contracts"], 0),
+                    _f(r["perceived_c_per_contract"]),
+                    _f(r["true_c_per_contract"]),
+                ]
+                for r in attr.get(key, [])
+            ]
+            if rows:
+                w(_table([label, "contracts", "perceived ¢", "true ¢"], rows))
+                w("")
+    w("## 7. Lead-lag estimates and stability by regime")
     w("")
     w(
         f"Reference mid → contract mid, true maker lag {ll.get('true_maker_lag_ms')} ms "
@@ -350,7 +436,7 @@ def render_markdown(result: Mapping[str, Any]) -> str:
     )
     w("")
 
-    w("## 7. Profit / loss concentration")
+    w("## 8. Profit / loss concentration")
     w("")
     if bm:
         c = bm.get("concentration", {})
@@ -367,7 +453,7 @@ def render_markdown(result: Mapping[str, Any]) -> str:
         )
     w("")
 
-    w("## 8. Structural (nested-strike) consistency")
+    w("## 9. Structural (nested-strike) consistency")
     w("")
     w(
         f"{st.get('family_samples')} family snapshots scanned; {st.get('violations_after_costs')} "
@@ -376,7 +462,7 @@ def render_markdown(result: Mapping[str, Any]) -> str:
     )
     w("")
 
-    w("## 9. Edge frontier (simulation)")
+    w("## 10. Edge frontier (simulation)")
     w("")
     w(
         "Ex-ante expected net ¢ per contract (true-model value minus price minus fees), "
@@ -385,6 +471,18 @@ def render_markdown(result: Mapping[str, Any]) -> str:
     )
     w("")
     w(frontier_table(frontier, "implied_vol", "expected_c_per_contract"))
+    w("")
+    for comp_label, comp in (
+        ("no competing arbitrageur", None),
+        ("a competing arbitrageur", "any"),
+    ):
+        lags = positive_maker_lags(frontier, crit_lat, comp)
+        grid = sorted({float(r["mm_lag_ms"]) for r in frontier})
+        w(
+            f"* At {crit_lat} ms with {comp_label}: expected edge is positive only for maker lags "
+            f"{', '.join(f'{x:g} ms' for x in lags) if lags else 'none'} "
+            f"(grid: {', '.join(f'{x:g} ms' for x in grid)})."
+        )
     w("")
     w("Contracts filled (same grid):")
     w("")
@@ -396,7 +494,7 @@ def render_markdown(result: Mapping[str, Any]) -> str:
         w(frontier_table(frontier, "realized_vol", "expected_c_per_contract"))
         w("")
 
-    w("## 10. Analytical cost hurdle")
+    w("## 11. Analytical cost hurdle")
     w("")
     w(
         "Move needed (bps of BTC) for a one-tick stale quote to clear the taker fee + 1¢ "
@@ -439,7 +537,7 @@ def render_markdown(result: Mapping[str, Any]) -> str:
     )
     w("")
 
-    w("## 11. Known limitations and unresolved issues")
+    w("## 12. Known limitations and unresolved issues")
     w("")
     for item in (
         "No real venue data was examined (network policy). All profitability numbers are "
@@ -447,6 +545,8 @@ def render_markdown(result: Mapping[str, Any]) -> str:
         "Synthetic makers re-quote from a lagged view with one-tick spreads and fixed depth "
         "distributions; real quoting (inventory skew, widening into events, cancels) differs.",
         "Competition is modelled as one arbitrageur class with a single latency and threshold.",
+        "The ex-ante 'truth' is the model world's fair value (current regime vol, exact 60 s "
+        "averaging); it measures edge against well-informed makers, not against real ones.",
         "Fee formulas reflect official documentation as of 2026-10 (Kalshi 0.07·C·P·(1−P) "
         "rounded up per order; Polymarket crypto 0.07·C·p·(1−p)); maker rebates are not "
         "credited; verify per-series values at runtime.",
@@ -460,7 +560,7 @@ def render_markdown(result: Mapping[str, Any]) -> str:
     ):
         w(f"* {item}")
     w("")
-    w("## 12. Next steps to reach a real-market decision")
+    w("## 13. Next steps to reach a real-market decision")
     w("")
     for item in (
         "Allow the market-data hosts in the environment network policy (Kalshi external-api, "

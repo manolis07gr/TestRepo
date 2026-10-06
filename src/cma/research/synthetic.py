@@ -178,7 +178,9 @@ def _fair_on_grid(  # noqa: PLR0917 - vectorised kernel over parallel arrays
         k_start = int(round(((expiry_ns - window_s * NS_PER_S) - t_ns[0]) / (dt_s * NS_PER_S)))  # noqa: RUF046
         k_start = max(k_start, 0)
         k_now = k_idx[inside]
-        integral = (prefix[k_now + 1] - prefix[k_start]) * dt_s
+        # known part covers [t_start, t_now) = samples k_start..k_now-1; the current
+        # sample belongs to the random remainder (spot * r), so it must not be counted twice
+        integral = (prefix[k_now] - prefix[k_start]) * dt_s
         mean = (integral + spot[inside] * r) / window_s
         sd = spot[inside] * sig_all[inside] * np.sqrt(r**3 / 3.0) / window_s
         with np.errstate(divide="ignore", invalid="ignore"):

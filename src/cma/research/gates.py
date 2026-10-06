@@ -8,6 +8,7 @@ outcome here is "forward-paper observation complete, eligible for a separate rev
 from __future__ import annotations
 
 import contextlib
+import math
 from collections.abc import Sequence
 from dataclasses import dataclass, field
 
@@ -136,22 +137,24 @@ def decide(
             gates.append(GateResult(name, False, f"scenario {cost}@{lat}ms not run", "economic"))
     if base is not None:
         conc = base.metrics.concentration
-        top_c = float(conc.get("top_contract_share_of_gains", 0.0))
-        top_f = float(conc.get("top_family_share_of_gains", 0.0))
-        top_d = float(conc.get("top_day_share_of_gains", 0.0))
-        ok = documented_concentration or (
-            top_c <= policy.max_top_contract_share
-            and top_f <= policy.max_top_family_share
-            and top_d <= policy.max_top_day_share
-        )
-        gates.append(
-            GateResult(
-                "profit_concentration",
-                ok,
-                f"top contract {top_c:.0%}, family {top_f:.0%}, day {top_d:.0%} of gains",
-                "robustness",
+        shares = [
+            (label, float(conc.get(key, math.nan)), limit)
+            for label, key, limit in (
+                ("contract", "top_contract_share_of_gains", policy.max_top_contract_share),
+                ("family", "top_family_share_of_gains", policy.max_top_family_share),
+                ("day", "top_day_share_of_gains", policy.max_top_day_share),
             )
+        ]
+        # NaN = no unit of that kind made money: nothing is concentrated (the
+        # out-of-sample gate already fails such a strategy)
+        ok = documented_concentration or all(
+            math.isnan(share) or share <= limit for _, share, limit in shares
         )
+        detail = ", ".join(
+            f"{label} n/a (none profitable)" if math.isnan(share) else f"{label} {share:.0%}"
+            for label, share, _ in shares
+        )
+        gates.append(GateResult("profit_concentration", ok, f"top {detail} of gains", "robustness"))
         n = base.metrics.n_positions
         gates.append(
             GateResult(

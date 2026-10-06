@@ -20,6 +20,7 @@ potential under stated assumptions*; they are not evidence of real-market profit
 
 from __future__ import annotations
 
+import itertools
 import json
 import math
 import time
@@ -31,6 +32,7 @@ from pathlib import Path
 from typing import Any
 
 import numpy as np
+from numpy.typing import NDArray
 
 from cma.backtest.experiment import (
     DatasetSpec,
@@ -148,19 +150,13 @@ def synthetic_dataset(params: Mapping[str, Any]) -> tuple[LoadedDataset, Any]:
     return ds, m
 
 
-def ex_ante_edge(core: Any, market: Any) -> dict[str, float]:
-    """Expected P&L of every fill under the TRUE model (simulation-only diagnostic).
-
-    E[payoff | information at fill time] is the true fair value computed from the true
-    index path and volatility, so ``side*(fair_true - price)*qty - fee`` isolates the
-    edge from settlement luck. Not available for real data.
-    """
+def _fill_truth(core: Any, market: Any) -> dict[str, NDArray[np.float64]]:
+    """Per-fill arrays: side sign, price, quantity, fee, TRUE fair value at fill time,
+    seconds to the observation end, and the net edge the signal believed it had."""
     from cma.research.synthetic import _fair_on_grid
 
     cfg = market.config
     fills = core.records.fills
-    if not fills:
-        return {"expected_net_pnl": 0.0, "expected_gross_pnl": 0.0, "expected_c_per_contract": 0.0}
     dt_ns = cfg.dt_ms * NS_PER_MS
     index = market.truth["index"]
     sigma = market.truth["sigma"]
@@ -169,18 +165,19 @@ def ex_ante_edge(core: Any, market: Any) -> dict[str, float]:
     prefix = np.concatenate([[0.0], np.cumsum(index)])
     window_s = 60.0 if cfg.observation_method == "AVG_60S_BEFORE" else 0.0
     maps = {m.contract_id: m for m in market.mappings}
-    by_contract: dict[str, list[Any]] = {}
-    for f in fills:
-        by_contract.setdefault(f.contract_id, []).append(f)
-    gross = 0.0
-    fees = 0.0
-    qty_total = 0.0
-    for cid, fs in by_contract.items():
+    perceived_by_signal = {s.signal_id: float(s.net_edge) for s in core.records.signals}
+    fair = np.empty(len(fills))
+    by_contract: dict[str, list[int]] = {}
+    for i, f in enumerate(fills):
+        by_contract.setdefault(f.contract_id, []).append(i)
+    for cid, ids in by_contract.items():
         mp = maps[cid]
         k = np.clip(
-            (np.array([f.fill_ts_ns for f in fs], dtype=np.int64) - cfg.start_ns) // dt_ns, 0, n - 1
+            (np.array([fills[i].fill_ts_ns for i in ids], dtype=np.int64) - cfg.start_ns) // dt_ns,
+            0,
+            n - 1,
         )
-        fair = _fair_on_grid(
+        fair[ids] = _fair_on_grid(
             index,
             prefix,
             t_grid,
@@ -191,13 +188,34 @@ def ex_ante_edge(core: Any, market: Any) -> dict[str, float]:
             window_s,
             cfg.dt_ms / 1000.0,
         )
-        for f, fv in zip(fs, fair, strict=True):
-            sign = 1.0 if f.side.value == "BUY" else -1.0
-            q = float(f.quantity)
-            gross += sign * (float(fv) - float(f.price)) * q
-            fees += float(f.fee)
-            qty_total += q
-    net = gross - fees
+    return {
+        "sign": np.array([1.0 if f.side.value == "BUY" else -1.0 for f in fills]),
+        "price": np.array([float(f.price) for f in fills]),
+        "qty": np.array([float(f.quantity) for f in fills]),
+        "fee": np.array([float(f.fee) for f in fills]),
+        "fair": fair,
+        "tte_s": np.array(
+            [(maps[f.contract_id].observation_end_ns - f.fill_ts_ns) / NS_PER_S for f in fills]
+        ),
+        "perceived": np.array(
+            [perceived_by_signal.get(f.signal_id or "", math.nan) for f in fills]
+        ),
+    }
+
+
+def ex_ante_edge(core: Any, market: Any) -> dict[str, float]:
+    """Expected P&L of every fill under the TRUE model (simulation-only diagnostic).
+
+    E[payoff | information at fill time] is the true fair value computed from the true
+    index path and volatility, so ``side*(fair_true - price)*qty - fee`` isolates the
+    edge from settlement luck. Not available for real data.
+    """
+    if not core.records.fills:
+        return {"expected_net_pnl": 0.0, "expected_gross_pnl": 0.0, "expected_c_per_contract": 0.0}
+    t = _fill_truth(core, market)
+    gross = float(np.sum(t["sign"] * (t["fair"] - t["price"]) * t["qty"]))
+    net = gross - float(np.sum(t["fee"]))
+    qty_total = float(np.sum(t["qty"]))
     return {
         "expected_net_pnl": net,
         "expected_gross_pnl": gross,
@@ -205,13 +223,64 @@ def ex_ante_edge(core: Any, market: Any) -> dict[str, float]:
     }
 
 
+ATTRIBUTION_EDGES_C = (1.5, 2.0, 3.0, 5.0, 10.0)
+ATTRIBUTION_TTE_S = (60.0, 300.0, 1800.0)
+
+
+def edge_attribution(core: Any, market: Any) -> dict[str, list[dict[str, Any]]]:
+    """Where the edge goes: per-contract TRUE net edge vs the net edge the signal
+    believed it had, by perceived-edge bucket and by time to expiry (simulation only).
+
+    A perceived edge that systematically exceeds the true one is adverse selection: the
+    strategy trades most when its own inputs (spot staleness, vol) are wrong.
+    """
+    if not core.records.fills:
+        return {"by_perceived_edge": [], "by_time_to_expiry": []}
+    t = _fill_truth(core, market)
+    true_c = 100.0 * (t["sign"] * (t["fair"] - t["price"]) - t["fee"] / t["qty"])
+    perceived_c = 100.0 * t["perceived"]
+
+    def table(
+        values: NDArray[np.float64], edges: Sequence[float], unit: str
+    ) -> list[dict[str, Any]]:
+        labels = [f"< {edges[0]:g}{unit}"]
+        labels += [f"{a:g}–{b:g}{unit}" for a, b in itertools.pairwise(edges)]
+        labels += [f"≥ {edges[-1]:g}{unit}"]
+        which = np.searchsorted(np.asarray(edges), values, side="right")
+        finite = np.isfinite(values)
+        rows = []
+        for b, label in enumerate(labels):
+            sel = (which == b) & finite
+            q = float(np.sum(t["qty"][sel]))
+            if q <= 0:
+                continue
+            ok = sel & np.isfinite(perceived_c)
+            q_ok = float(np.sum(t["qty"][ok]))
+            rows.append(
+                {
+                    "bucket": label,
+                    "contracts": q,
+                    "true_c_per_contract": float(np.sum(true_c[sel] * t["qty"][sel]) / q),
+                    "perceived_c_per_contract": (
+                        float(np.sum(perceived_c[ok] * t["qty"][ok]) / q_ok) if q_ok else math.nan
+                    ),
+                }
+            )
+        return rows
+
+    return {
+        "by_perceived_edge": table(perceived_c, ATTRIBUTION_EDGES_C, "¢"),
+        "by_time_to_expiry": table(t["tte_s"], ATTRIBUTION_TTE_S, " s"),
+    }
+
+
 # ----------------------------------------------------------------------------- frontier
 
 
 def _frontier_task(
-    args: tuple[dict[str, Any], tuple[int, ...], int, str],
+    args: tuple[dict[str, Any], tuple[int, ...], int, str, int],
 ) -> list[dict[str, Any]]:
-    params, latencies, seed, model = args
+    params, latencies, seed, model, attribution_latency = args
     ds, market = synthetic_dataset(params)
     cfg = _cfg()
     strategy = BASE_STRATEGY if model == "implied_vol" else REALIZED_VOL_STRATEGY
@@ -222,8 +291,12 @@ def _frontier_task(
         )
         m = r.metrics
         ex = ex_ante_edge(core, market)
+        row: dict[str, Any] = {}
+        if lat == attribution_latency:
+            row["attribution"] = edge_attribution(core, market)
         rows.append(
-            {
+            row
+            | {
                 "mm_lag_ms": params["mm_lag_ms"],
                 "competitor_ms": params["competitor_latency_ms"],
                 "model": model,
@@ -255,9 +328,10 @@ def run_frontier(plan: EvaluationPlan) -> list[dict[str, Any]]:
             params = _market_params(
                 plan, hours=plan.frontier_hours, mm_lag=mm, comp=comp, seed=plan.seed
             )
-            tasks.append((params, plan.latencies_ms, plan.seed, "implied_vol"))
+            crit = plan.criterion_latency_ms
+            tasks.append((params, plan.latencies_ms, plan.seed, "implied_vol", crit))
             if (mm, comp) in plan.frontier_realized_vol_scenarios:
-                tasks.append((params, plan.latencies_ms, plan.seed, "realized_vol"))
+                tasks.append((params, plan.latencies_ms, plan.seed, "realized_vol", crit))
     rows: list[dict[str, Any]] = []
     with ProcessPoolExecutor(max_workers=plan.workers, mp_context=_fork()) as pool:
         for part in pool.map(_frontier_task, tasks):
@@ -297,17 +371,18 @@ def _sensitivity_task(
     r, core = run_single(
         part, strat, _cfg(edge_bps), latency_ms=latency, cost=CostScenario(name="base"), seed=seed
     )
-    pnls = list(_position_pnls(core).values())
     ex = ex_ante_edge(core, market)
     return {
         "min_net_edge_bps": edge_bps,
         "vol_multiplier": vol_mult,
         "net_pnl": r.metrics.net_pnl,
         "expected_net_pnl": ex["expected_net_pnl"],
+        "expected_c_per_contract": ex["expected_c_per_contract"],
         "markout_60s_net_pnl": r.metrics.markout_net_pnl.get("60000ms", math.nan),
         "n_positions": r.metrics.n_positions,
         "contracts": r.metrics.filled_contracts,
-        "position_pnls": pnls,
+        # strikes of one hourly ladder settle on the same index print: one bet, not nine
+        "family_pnls": _family_pnls(core),
     }
 
 
@@ -346,6 +421,8 @@ def _grid_task(
     )
     out = r.to_dict()
     out["ex_ante"] = ex_ante_edge(core, market)
+    if scenario.name == "base":
+        out["attribution"] = edge_attribution(core, market)
     out["family_pnls"] = _family_pnls(core)
     return out, list(_position_pnls(core).values())
 
@@ -409,6 +486,7 @@ class BaseCaseResult:
     final_test_access_log: list[str] = field(default_factory=list)
     ex_ante: dict[str, dict[str, float]] = field(default_factory=dict)
     model_risk: list[dict[str, Any]] = field(default_factory=list)
+    attribution: dict[str, Any] = field(default_factory=dict)
 
 
 def run_base_case(
@@ -445,13 +523,15 @@ def run_base_case(
     ]
     with ProcessPoolExecutor(max_workers=plan.workers, mp_context=_fork()) as pool:
         sens = list(pool.map(_sensitivity_task, tasks))
+    from scipy.stats import t as student_t
+
     pvals = []
     for row in sens:
-        x = np.asarray(row.pop("position_pnls"), dtype=float)
+        # independent unit = event family; per-contract tests overstate significance
+        x = np.asarray(row.pop("family_pnls"), dtype=float)
+        row["n_families"] = int(x.size)
         if x.size >= 3 and np.std(x, ddof=1) > 0:
             tstat = float(np.mean(x) / (np.std(x, ddof=1) / math.sqrt(x.size)))
-            from scipy.stats import t as student_t
-
             p = float(student_t.sf(tstat, df=x.size - 1))
         else:
             p = 1.0
@@ -461,6 +541,7 @@ def run_base_case(
     multiple = {
         "n_hypotheses": len(pvals),
         "alpha": cfg.research.fdr_alpha,
+        "test": "one-sided t-test of mean net P&L per event family > 0 (validation window)",
         "bh_adjusted": [float(x) for x in bh.adjusted],
         "n_rejected": int(bh.n_rejected),
     }
@@ -519,6 +600,11 @@ def run_base_case(
     _SHARED.clear()
     grid = _grid_from_dicts([o[0] for o in outs])
     ex_ante = {f"{o[0]['cost']}@{o[0]['latency_ms']}": o[0]["ex_ante"] for o in outs}
+    attribution = {
+        f"{o[0]['cost']}@{o[0]['latency_ms']}": o[0]["attribution"]
+        for o in outs
+        if "attribution" in o[0]
+    }
     base_idx = next(
         i
         for i, t in enumerate(grid_tasks)
@@ -586,6 +672,7 @@ def run_base_case(
         publication_error=pub_err,
         final_test_access_log=access_log,
         ex_ante=ex_ante,
+        attribution=attribution,
         model_risk=model_risk,
     )
 
@@ -822,6 +909,7 @@ def run_evaluation(out_dir: Path, plan: EvaluationPlan | None = None) -> dict[st
             "fills_table": b.grid.table("n_fills"),
             "ci_mean_position_pnl": b.ci,
             "ex_ante": b.ex_ante,
+            "edge_attribution": b.attribution,
             "model_risk": b.model_risk,
             "markout_60s_table": {
                 c: {

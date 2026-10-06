@@ -13,6 +13,8 @@ from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import Any
 
+from cma.research.report import positive_maker_lags
+
 LAT = (0, 100, 250, 500, 1000, 2000, 5000)
 EVIDENCE = (
     (
@@ -116,6 +118,8 @@ ul.plain{margin:0;padding-left:18px;display:grid;gap:6px}
 .key{display:inline-flex;align-items:center;gap:8px}
 .key i{display:inline-block;width:18px;height:3px;border-radius:2px}
 .panels{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:12px}
+.panels.wide{grid-template-columns:repeat(auto-fit,minmax(300px,1fr))}
+.panel .tablebox{margin-top:8px}
 .panel{background:var(--surface);border:1px solid var(--rule);border-radius:6px;
   padding:10px 10px 6px;min-width:0}
 .panel h3{font-size:13px;font-weight:600;color:var(--ink)}
@@ -187,6 +191,9 @@ def _fmt(x: Any, nd: int = 2, sign: bool = False) -> str:
     v = _num(x)
     if v is None:
         return "n/a"
+    if round(v, nd) == 0:
+        v = 0.0  # no "−0" / "+0.00" for values that round to zero
+        return f"{v:,.{nd}f}"
     s = f"{v:+,.{nd}f}" if sign else f"{v:,.{nd}f}"
     return s.replace("-", "−")
 
@@ -196,6 +203,85 @@ def _cls(x: Any) -> str:
     if v is None or abs(v) < 1e-12:
         return ""
     return "pos" if v > 0 else "neg"
+
+
+def _ms_label(ms: float) -> str:
+    return f"{ms / 1000:g} s" if ms >= 1000 else f"{ms:g} ms"
+
+
+def _attribution_table(attr: Mapping[str, Any]) -> str:
+    rows = "".join(
+        f"<tr><td>{html.escape(str(r['bucket']))}</td><td>{_fmt(r['contracts'], 0)}</td>"
+        f"<td>{_fmt(r['perceived_c_per_contract'], 2, True)}</td>"
+        f'<td class="{_cls(r["true_c_per_contract"])}">'
+        f"{_fmt(r['true_c_per_contract'], 2, True)}</td></tr>"
+        for r in attr.get("by_perceived_edge", [])
+    )
+    return (
+        '<div class="tablebox"><table><thead><tr><th>signal saw</th><th>contracts</th>'
+        "<th>perceived ¢</th><th>true ¢</th></tr></thead>"
+        f"<tbody>{rows}</tbody></table></div>"
+    )
+
+
+def _weighted(attr: Mapping[str, Any], field: str) -> float | None:
+    rows = attr.get("by_perceived_edge", [])
+    q = sum(float(r["contracts"]) for r in rows if _num(r.get(field)) is not None)
+    if q <= 0:
+        return None
+    return (
+        sum(float(r["contracts"]) * float(r[field]) for r in rows if _num(r.get(field)) is not None)
+        / q
+    )
+
+
+def _attribution_section(result: Mapping[str, Any], crit: int) -> str:
+    panels = []
+    summary: list[str] = []
+    for mm in (350.0, 3000.0):
+        row = next(
+            (
+                r
+                for r in result.get("frontier", [])
+                if r.get("model", "implied_vol") == "implied_vol"
+                and float(r["mm_lag_ms"]) == mm
+                and r["competitor_ms"] is not None
+                and int(r["latency_ms"]) == crit
+                and r.get("attribution")
+            ),
+            None,
+        )
+        if row is None:
+            continue
+        attr = row["attribution"]
+        perceived, true = (
+            _weighted(attr, "perceived_c_per_contract"),
+            _weighted(attr, "true_c_per_contract"),
+        )
+        summary.append(
+            f"with {_ms_label(mm)} makers, filled contracts looked worth "
+            f"{_fmt(perceived, 2, True)}¢ each to the strategy and were truly worth "
+            f"{_fmt(true, 2, True)}¢"
+            if not summary
+            else f"with {_ms_label(mm)} makers, {_fmt(perceived, 2, True)}¢ against "
+            f"{_fmt(true, 2, True)}¢"
+        )
+        panels.append(
+            f'<div class="panel"><h3>Makers re-quote in {_ms_label(mm)}</h3>'
+            f'<div class="sub">{row["competitor_ms"]:g} ms competitor · {crit} ms latency · '
+            f"{_fmt(row.get('contracts'), 0)} contracts</div>{_attribution_table(attr)}</div>"
+        )
+    if not panels:
+        return ""
+    return f"""
+<section id="attribution">
+  <h2>Where the edge goes</h2>
+  <p class="memo">Each fill's net edge as the signal saw it, against its true net edge at fill
+  time (true fair value minus price minus fee). In the model, {"; ".join(summary)}. The gap is
+  adverse selection: the strategy trades hardest exactly when its own spot or volatility input
+  is stale, and fast makers have already moved.</p>
+  <div class="panels wide">{"".join(panels)}</div>
+</section>"""
 
 
 def _nice_ticks(lo: float, hi: float, n: int = 5) -> list[float]:
@@ -408,19 +494,38 @@ def render_fragment(result: Mapping[str, Any]) -> str:
 
     doc_case = front(350.0, 120.0, crit)
     slow_case = front(3000.0, 120.0, crit)
-    # slowest-maker scenario that is still positive at the criterion latency with competitor
-    pos_mm = sorted(
-        {
-            float(r["mm_lag_ms"])
-            for r in frontier
-            if r.get("model", "implied_vol") == "implied_vol"
-            and r["competitor_ms"] is not None
-            and int(r["latency_ms"]) == crit
-            and (_num(r.get("expected_c_per_contract")) or -1) > 0
-        }
+    grid_lags = sorted(
+        {float(r["mm_lag_ms"]) for r in frontier if r.get("model", "implied_vol") == "implied_vol"}
     )
-    need = f"≥ {pos_mm[0] / 1000:g} s" if pos_mm else "none in grid"
+    pos_comp = positive_maker_lags(frontier, crit, "any")
+    need = _ms_label(pos_comp[0]) if pos_comp else "none in grid"
+    buyable = [lat for lat in LAT if lat >= 100]
+
+    def negative_everywhere(mm: float, comp: Any) -> bool:
+        cells = [front(mm, comp, lat) for lat in buyable]
+        return all(
+            c is not None and (_num(c.get("expected_c_per_contract")) or 0.0) < 0 for c in cells
+        )
+
+    reported_negative = negative_everywhere(350.0, None) and negative_everywhere(350.0, 120.0)
     ex = (kal.get("ex_ante") or {}).get(f"base@{crit}", {}) if kal else {}
+    if reported_negative and pos_comp:
+        lede = (
+            "Not at the speeds these markets are reported to run. In a market model calibrated "
+            "to public evidence, a lead-lag taker clears the 0.07·p(1−p) taker fee only when "
+            f"makers take about {need} or longer to re-quote after a BTC move. At the reported "
+            "~350 ms the expected edge is negative at every latency we can buy (100 ms and up), "
+            "with or without a faster arbitrageur. No real venue data could be collected here, "
+            "so the real-market call is to collect data first."
+        )
+    else:
+        lede = (
+            f"In a market model calibrated to public evidence, 350 ms makers and a 120 ms "
+            f"arbitrageur leave {_fmt((doc_case or {}).get('expected_c_per_contract'), 2, True)}¢ "
+            f"of expected edge per contract at {crit} ms after the 0.07·p(1−p) taker fee. No "
+            "real venue data could be collected here, so the real-market call is to collect "
+            "data first."
+        )
 
     verdicts = [
         (
@@ -459,9 +564,9 @@ def render_fragment(result: Mapping[str, Any]) -> str:
   <div class="tile"><span class="label">Expected edge, 3 s makers, {crit} ms latency</span>
     <span class="value {_cls((slow_case or {}).get("expected_c_per_contract"))}">{_fmt((slow_case or {}).get("expected_c_per_contract"), 2, True)}¢</span>
     <span class="note">same competitor; makers ~9× slower than reported</span></div>
-  <div class="tile"><span class="label">Maker lag needed for any edge</span>
-    <span class="value">{need}</span>
-    <span class="note">with a 120 ms competitor, at {crit} ms latency</span></div>
+  <div class="tile"><span class="label">Smallest maker lag with positive edge</span>
+    <span class="value">{html.escape(need)}</span>
+    <span class="note">grid {" · ".join(_ms_label(x) for x in grid_lags)}; 120 ms competitor, {crit} ms latency</span></div>
 </div>"""
 
     base_html = ""
@@ -550,13 +655,28 @@ def render_fragment(result: Mapping[str, Any]) -> str:
             f"{html.escape(fails[0][:110]) if fails else ''}</td></tr>"
         )
     st = result.get("structural", {})
+    results_ll = ll.get("results", [])
+    n_ll = len(results_ll)
+    n_lead = sum(
+        1
+        for r in results_ll
+        if any(str(x).startswith("PASS significance") for x in r["overall"].get("reasons", []))
+        and (_num(r["overall"].get("incremental_oos_r2")) or 0.0) > 0
+    )
+    n_qual = sum(1 for r in results_ll if r["overall"].get("qualifies"))
+    ll_head = (
+        "Lead-lag is real, the money is not"
+        if n_lead and not n_qual
+        else "Lead-lag discovery on contract mids"
+    )
     ll_html = f"""
 <section id="leadlag">
-  <h2>Lead-lag is real, the money is not</h2>
-  <p class="memo">The discovery engine finds the reference market leading contract mids by
-  a few hundred milliseconds, significant and predictive out of sample, consistent with the
-  {ll.get("true_maker_lag_ms", 350):g} ms maker lag built into the data. It still fails
-  the economic gate: predicted moves rarely exceed fee plus half-spread.</p>
+  <h2>{ll_head}</h2>
+  <p class="memo">In {n_lead} of {n_ll} contracts the discovery engine finds the reference
+  market leading contract mids by a few hundred milliseconds, significant under a
+  circular-shift null and predictive out of sample, consistent with the
+  {ll.get("true_maker_lag_ms", 350):g} ms maker lag built into the data. {n_qual} of {n_ll}
+  pass the economic gate: predicted moves rarely exceed the taker fee plus half the spread.</p>
   <div class="tablebox"><table><thead><tr><th>contract</th><th>CCF lag ms</th>
   <th>HY lag ms</th><th>p</th><th>ΔOOS R²</th><th>hit rate</th><th>qualifies</th>
   <th>first failing gate</th></tr></thead><tbody>{"".join(ll_rows)}</tbody></table></div>
@@ -580,11 +700,7 @@ def render_fragment(result: Mapping[str, Any]) -> str:
 <header class="top">
   <span class="eyebrow">Cross-market prediction trading · edge evaluation · {html.escape(str(man.get("experiment_id", "")))}</span>
   <h1>Can a faster BTC feed beat Kalshi and Polymarket quotes after fees?</h1>
-  <p class="lede">Not at the speeds these markets are reported to run. A lead-lag taker needs
-  makers that re-quote seconds after a move and no faster arbitrageur; at the reported
-  ~350 ms reaction time the expected edge is negative after the 0.07·p(1−p) taker fee at
-  every latency we can buy. No real venue data could be collected here, so the real-market
-  call is to collect data first.</p>
+  <p class="lede">{html.escape(lede)}</p>
 </header>
 <section id="decision">
   <h2>Decision</h2>
@@ -592,6 +708,7 @@ def render_fragment(result: Mapping[str, Any]) -> str:
   {tiles}
 </section>
 {_frontier_section(frontier)}
+{_attribution_section(result, crit)}
 {base_html}
 {poly_html}
 {hurdle_html}
@@ -604,8 +721,8 @@ def render_fragment(result: Mapping[str, Any]) -> str:
   <h2>What would change the answer</h2>
   <ul class="plain memo">
     <li>Measure the real maker reaction-lag distribution and competitor fill speed on
-    Kalshi BTC ladders from collected books. The frontier says any edge needs makers slower
-    than about {html.escape(need.replace("≥ ", ""))} with a 120 ms competitor present.</li>
+    Kalshi BTC ladders from collected books. In the model, edge appears only once makers
+    take about {html.escape(need)} or longer, with a 120 ms competitor present.</li>
     <li>Collect ≥ 14 days with <code>cma collect</code> once the venue hosts are reachable,
     approve mappings, then run <code>cma stress</code> and <code>cma leadlag</code>.
     Publication is refused unless every latency (0–5 s) and ≥ 2 adverse cost scenarios

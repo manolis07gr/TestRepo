@@ -155,6 +155,48 @@ def test_synthetic_market_invariants() -> None:
     assert [e.event_id for e in again.events] == [e.event_id for e in m.events]
 
 
+def test_synthetic_truth_matches_production_fair_value_inside_and_before_window() -> None:
+    """The simulator's true fair value (maker quotes, ex-ante scoring) and the strategy's
+    model must agree given the same information; regression for a double-counted sample
+    that biased the in-window average by spot*dt/w (~$92 at 110k)."""
+    import numpy as np
+
+    from cma.research.synthetic import _fair_on_grid
+
+    m = generate_market(SyntheticMarketConfig(hours=2, n_strikes=3, seed=5))
+    cfg = m.config
+    idx, sig = m.truth["index"], m.truth["sigma"]
+    dt = cfg.dt_ms / 1000
+    dt_ns = cfg.dt_ms * NS_PER_MS
+    t = cfg.start_ns + np.arange(idx.size, dtype=np.int64) * dt_ns
+    prefix = np.concatenate([[0.0], np.cumsum(idx)])
+    end = min(mp.observation_end_ns for mp in m.mappings)
+    k_end = (end - cfg.start_ns) // dt_ns
+    k0 = k_end - round(60 / dt)
+    for mp in (x for x in m.mappings if x.observation_end_ns == end):
+        strike = float(mp.strikes[0])
+        for secs_left in (300.0, 45.0, 30.0, 10.0, 1.0):
+            k = k_end - round(secs_left / dt)
+            truth = float(
+                _fair_on_grid(idx, prefix, t, np.array([k]), strike, end, sig, 60.0, dt)[0]
+            )
+            inside = k >= k0
+            model = prob_above(
+                spot=float(idx[k]),
+                strike=strike,
+                now_ns=int(t[k]),
+                observation_end_ns=end,
+                sigma=float(sig[k]),
+                observation_method="AVG_60S_BEFORE",
+                averaging=AveragingState(
+                    elapsed_s=(k - k0) * dt, integral=float(idx[k0:k].sum()) * dt
+                )
+                if inside
+                else None,
+            )
+            assert truth == pytest.approx(model, abs=1e-6), (strike, secs_left)
+
+
 def test_report_rendering_from_minimal_result(tmp_path: Path) -> None:
     result = {
         "plan": {"criterion_latency_ms": 250},

@@ -43,15 +43,23 @@ average), signal gates, risk limits, the latency-aware simulator and Decimal acc
   variance and available on real data; used for parameter selection on validation.
 * **Ex-ante expected P&L** (simulation only): each fill valued at the *true* fair value at
   fill time from the true index path and vol. It removes settlement noise entirely and is
-  the cleanest estimate of edge in the model world.
+  the cleanest estimate of edge in the model world. The synthetic truth and the production
+  fair-value model are cross-checked in a unit test (identical inputs → identical
+  probabilities, inside and before the 60 s averaging window).
+* **Edge attribution** (simulation only): per fill, the net edge the signal *believed* it
+  had versus the true net edge at fill time, bucketed by perceived edge and by time to
+  expiry. A perceived edge that systematically exceeds the true edge is adverse selection
+  (the strategy trades most when its own spot or vol input is stale).
 
 ## 5. Protocol
 
 1. Frontier: sweep maker lag × competitor latency × our latency (0 ms diagnostic only) for
    the implied-vol model, plus the realized-vol model on selected scenarios (model risk).
 2. Base case: 48 h market → chronological train / validation / final test; 12 settings
-   searched on validation only (logged; Benjamini–Hochberg); final test unlocked once;
-   full latency × 4 cost-scenario grid; family bootstrap CI; promotion gates.
+   searched on validation only, each logged as a hypothesis tested on *event-family* P&L
+   (one-sided t-test; Benjamini–Hochberg), selected by validation 60 s mark-outs; final
+   test unlocked once; full latency × 4 cost-scenario grid; family bootstrap CI;
+   promotion gates.
 3. Venue variant: Polymarket fee + 150 ms taker delay on the same market dynamics.
 4. Lead-lag discovery on reference → contract mids (CCF + Hayashi–Yoshida, block-permutation
    significance, out-of-sample predictive and economic gates), stratified by time to expiry.

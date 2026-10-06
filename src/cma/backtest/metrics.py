@@ -175,11 +175,12 @@ def concentration(
             by_day[first_fill[cid] // NS_PER_DAY] += v
     fam_pos = sorted((v for v in by_family.values() if v > 0), reverse=True)
     day_pos = sorted((v for v in by_day.values() if v > 0), reverse=True)
+    # a share of gains is undefined (NaN) when no unit of that kind made money
     return {
         "total_net": total,
-        "top_contract_share_of_gains": positives[0] / pos_total if pos_total > 0 else 0.0,
-        "top_family_share_of_gains": (fam_pos[0] / sum(fam_pos)) if fam_pos else 0.0,
-        "top_day_share_of_gains": (day_pos[0] / sum(day_pos)) if day_pos else 0.0,
+        "top_contract_share_of_gains": positives[0] / pos_total if pos_total > 0 else math.nan,
+        "top_family_share_of_gains": (fam_pos[0] / sum(fam_pos)) if fam_pos else math.nan,
+        "top_day_share_of_gains": (day_pos[0] / sum(day_pos)) if day_pos else math.nan,
         "n_families": len(by_family),
         "n_days": len(by_day),
     }
