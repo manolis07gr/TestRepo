@@ -372,3 +372,52 @@ def test_incident_log_extends_open_windows_and_is_idempotent() -> None:
     assert log.close(Venue.KALSHI, "POLL_FAILED", 300, instrument_id="KALSHI:X") is None
     rows = db.query("SELECT start_ns, end_ns FROM data_quality_incidents")
     assert rows == [{"start_ns": 100, "end_ns": 200}]
+
+
+def test_session_subscribes_markets_listed_after_connect() -> None:
+    """A long-running feed must pick up markets that list later (new hourly / 15-minute
+    BTC contracts) on the live connection, with command ids that never collide."""
+    clock = ManualClock(T0_NS)
+    books = BookManager()
+    pending: list[list[str]] = [["KXNEW-1", "KXNEW-2"]]
+    session: FeedSession
+
+    async def refresh() -> list[str]:
+        return pending.pop(0) if pending else []
+
+    async def wait_for_refresh() -> None:
+        for _ in range(100):
+            if session.subscription_refreshes:
+                return
+            await asyncio.sleep(0)
+
+    async def no_wait(_seconds: float) -> None:
+        await asyncio.sleep(0)
+
+    initial = build_subscriptions([KALSHI_TICKER])
+    transport = ScriptedTransport(
+        [
+            [
+                kalshi_frame("snapshot", 1),
+                wait_for_refresh,
+                kalshi_frame("delta", 2),
+                stop_session(lambda: session),
+            ]
+        ]
+    )
+    session = make_session(
+        transport,
+        clock,
+        books,
+        subscriptions=initial,
+        subscription_refresh=refresh,
+        subscription_frames=lambda tickers, first: build_subscriptions(tickers, start_id=first),
+        subscription_refresh_s=0.0,
+        refresh_sleep=no_wait,
+    )
+    asyncio.run(session.run())
+    sent = [json.loads(f) for f in transport.connections[0].sent]
+    assert [f["id"] for f in sent] == list(range(1, len(sent) + 1))
+    added = [f for f in sent[len(initial) :] if f["params"]["channels"] == ["orderbook_delta"]]
+    assert [f["params"]["market_tickers"] for f in added] == [["KXNEW-1"], ["KXNEW-2"]]
+    assert session.subscription_refreshes == 1

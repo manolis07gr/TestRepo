@@ -508,10 +508,22 @@ class FeedSession:
         resync_timeout_s: float = 10.0,
         health: FeedHealth | None = None,
         incidents: IncidentLog | None = None,
+        subscription_refresh: Callable[[], Awaitable[Sequence[str]]] | None = None,
+        subscription_frames: Callable[[Sequence[str], int], Sequence[str]] | None = None,
+        subscription_refresh_s: float = 60.0,
+        refresh_sleep: SleepFn | None = None,
     ) -> None:
         self.name = name
         self.url = url
         self.stream = stream
+        # targets listed after the connection opened (e.g. a new hourly market) are
+        # subscribed on the live connection: ``subscription_refresh`` yields the new
+        # targets, ``subscription_frames(targets, first_cmd_id)`` builds their frames
+        self._refresh_targets = subscription_refresh
+        self._refresh_frames = subscription_frames
+        self._refresh_s = subscription_refresh_s
+        self._refresh_sleep: SleepFn = refresh_sleep or asyncio.sleep
+        self.subscription_refreshes = 0
         self._incidents = incidents
         self.venue: Venue = adapter.venue
         self._adapter = adapter
@@ -695,6 +707,7 @@ class FeedSession:
         delivered = False
         reason = "closed"
         keepalive = self._start_keepalive(conn)
+        refresher = self._start_refresh()
         try:
             while not self._stop_requested:
                 if self._idle_timeout_s is not None:
@@ -721,10 +734,11 @@ class FeedSession:
             reason = f"error: {_describe(exc)}"
             log.warning("%s: connection error: %s", self.name, reason)
         finally:
-            if keepalive is not None:
-                keepalive.cancel()
-                with suppress(asyncio.CancelledError, Exception):
-                    await keepalive
+            for task in (keepalive, refresher):
+                if task is not None:
+                    task.cancel()
+                    with suppress(asyncio.CancelledError, Exception):
+                        await task
             self._conn = None
             self._connected = False
             self._invalidate_books(QualityFlag.DISCONNECTED)
@@ -740,6 +754,32 @@ class FeedSession:
             log.info("%s: disconnected (%s)", self.name, reason)
             await _close_quietly(conn)
         return delivered
+
+    def _start_refresh(self) -> asyncio.Task[None] | None:
+        if self._refresh_targets is None or self._refresh_frames is None:
+            return None
+        return asyncio.get_running_loop().create_task(self._refresh_loop())
+
+    async def _refresh_loop(self) -> None:
+        assert self._refresh_targets is not None
+        assert self._refresh_frames is not None
+        while True:
+            await self._refresh_sleep(self._refresh_s)
+            try:
+                targets = list(await self._refresh_targets())
+            except asyncio.CancelledError:
+                raise
+            except Exception as exc:  # discovery hiccups never take the feed down
+                log.warning("%s: subscription refresh failed: %s", self.name, _describe(exc))
+                continue
+            if not targets:
+                continue
+            # ids are allocated synchronously, so they cannot collide with resync commands
+            frames = list(self._refresh_frames(targets, self._cmd_id + 1))
+            self._cmd_id += len(frames)
+            self._outbox.extend(frames)  # the pump sends them on its next turn
+            self.subscription_refreshes += 1
+            log.info("%s: subscribing %d new targets", self.name, len(targets))
 
     def _start_keepalive(self, conn: WsConnection) -> asyncio.Task[None] | None:
         if self._keepalive is None:

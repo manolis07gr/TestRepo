@@ -314,6 +314,7 @@ class KalshiDiscovery:
         self._status = status
         self._cache: list[str] | None = None
         self._cache_ns = 0
+        self._subscribed: set[str] = set()
 
     async def tickers(self) -> list[str]:
         now = self._clock.now_ns()
@@ -348,7 +349,16 @@ class KalshiDiscovery:
         return list(dict.fromkeys(out))
 
     async def subscriptions(self) -> list[str]:
-        return build_subscriptions(await self.tickers())
+        """Frames for a fresh connection (every currently known market)."""
+        tickers = await self.tickers()
+        self._subscribed = set(tickers)
+        return build_subscriptions(tickers)
+
+    async def new_tickers(self) -> list[str]:
+        """Markets listed since the connection subscribed (marked subscribed on return)."""
+        fresh = [t for t in await self.tickers() if t not in self._subscribed]
+        self._subscribed.update(fresh)
+        return fresh
 
 
 class PolymarketDiscovery:
@@ -500,6 +510,11 @@ class _Wiring:
                 subscriptions=discovery.subscriptions,
                 headers=lambda: ws_auth_headers(signer, ws_url),
                 on_sequence_gap="resync",
+                subscription_refresh=discovery.new_tickers,
+                subscription_frames=lambda tickers, first_id: build_subscriptions(
+                    tickers, start_id=first_id
+                ),
+                subscription_refresh_s=min(60.0, self.discovery_refresh_s),
             )
         log.info("kalshi: no usable WebSocket credentials; REST orderbook poller fallback")
         return KalshiRestBookPoller(

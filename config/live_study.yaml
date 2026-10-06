@@ -1,0 +1,18 @@
+# Live staleness study (scripts/live_study.py): merged on top of config/base.yaml.
+# Kalshi BTC "above strike" ladders (hourly/daily) and 15-minute up/down markets against
+# Coinbase BTC-USD. Kalshi needs KALSHI_API_KEY_ID + KALSHI_PRIVATE_KEY for the live
+# WebSocket; without them the collector falls back to slow REST polling.
+storage:
+  raw_dir: data/live_study/raw
+  db_url: sqlite:///data/live_study/cma.sqlite
+venues:
+  kalshi:
+    series: [KXBTCD, KXBTC15M]
+  polymarket:
+    enabled: false
+  coinbase:
+    instruments: [BTC-USD]
+  binance:
+    enabled: false
+  deribit:
+    enabled: false
