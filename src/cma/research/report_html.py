@@ -1215,9 +1215,10 @@ def ladder_lede(ladder: Mapping[str, Any]) -> str:
             "was there."
         )
     return (
-        "Kalshi's own contracts don't disagree either: its 15-minute markets and the hourly "
-        "ladder that settles on the same number left a riskless trade after both fees, lasting "
-        f"a minute, in {_fmt(count, 0)} of {_fmt(hours, 0)} hours."
+        "Kalshi's own contracts barely disagree either: between its 15-minute markets and the "
+        "hourly ladder that settles on the same number, a riskless trade after both fees that "
+        f"lasted a minute appeared in only {_fmt(count, 0)} of {_fmt(hours, 0)} hours"
+        + (f", worth a median {_fmt(med, 2, True)}¢ per pair." if med is not None else ".")
     )
 
 
@@ -1279,8 +1280,8 @@ def _ladder_section(ladder: Mapping[str, Any]) -> str:
   1-minute closing quotes; a rule fixed before the first run decides.</p>
   {tiles}
   <div class="tablebox"><table>
-    <thead><tr><th>Pair</th><th>Minutes crossed before fees</th><th>Minutes riskless after fees</th>
-    <th>Hours taken (lasted a minute)</th></tr></thead>
+    <thead><tr><th>Pair</th><th>Crossed before fees</th><th>Riskless after fees</th>
+    <th>Hours (lasted 1 min)</th></tr></thead>
     <tbody>{rows}</tbody></table></div>
   <ul class="plain memo" style="font-size:13.5px;color:var(--ink-2)">{reasons}</ul>
 </section>"""

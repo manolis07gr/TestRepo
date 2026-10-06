@@ -23,6 +23,12 @@ fees, spread, depth, latency, partial fills and adverse selection. Built to the
 > to settlement lost money in every specification, in and out of sample; the selected one made
 > −0.97 ± 1.24¢ per contract (2,464 trades in 11,020 out-of-sample markets). Kalshi's mid forecast settlement better than
 > the model (Brier 0.119 vs 0.122–0.131 five minutes before close) and is well calibrated.
+>
+> Same venue, no model ([`reports/ladder_check/summary.md`](reports/ladder_check/summary.md)): **REJECT**.
+> Every hour the 15-minute market and the hourly `KXBTCD` ladder settle on the same index average, so
+> their prices must nest. Over 6,405 hours (Dec 2025 – Oct 2026) a riskless pair after both taker fees
+> that was still there a minute later appeared in 42 hours (0.66%), worth a median 0.65¢ per pair; the
+> ladder itself was never out of order.
 
 ## What is in the box
 

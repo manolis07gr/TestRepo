@@ -1,0 +1,498 @@
+{
+ "config": {
+  "first_minute": 2,
+  "last_minute": 13,
+  "last_fill_minute": 14,
+  "qty": 100,
+  "min_opportunity_share": 0.02,
+  "min_median_profit_c": 1.0
+ },
+ "data": {
+  "hours_15m_on_the_hour": 6895,
+  "ladder_missing": 310,
+  "no_sane_minute": 180,
+  "paired_hours": 6405,
+  "first_close": "2025-12-15T21:00:00+00:00",
+  "last_close": "2026-10-06T18:00:00+00:00",
+  "ladder_spacing_hours": {
+   "250": 1835,
+   "500": 46,
+   "100": 4524
+  },
+  "hours_with_settlement_value": 6403,
+  "settlement_agrees_with_15m_result": 6403
+ },
+ "opportunities": {
+  "count": 42,
+  "share_of_hours": 0.006557377049180328,
+  "by_pair": {
+   "a": 26,
+   "b": 16,
+   "c": 0
+  },
+  "profit_fill_c": {
+   "median": 0.6499999999999977,
+   "mean": 1.4433333333333334,
+   "p90": 3.2640000000000042,
+   "max": 12.340000000000002
+  },
+  "realised_c": {
+   "n": 42,
+   "mean": 1.4433333333333334,
+   "min": 0.04000000000000026
+  },
+  "by_month": {
+   "2025-12": {
+    "paired_hours": 181,
+    "count": 2
+   },
+   "2026-01": {
+    "paired_hours": 542,
+    "count": 1
+   },
+   "2026-02": {
+    "paired_hours": 626,
+    "count": 0
+   },
+   "2026-03": {
+    "paired_hours": 688,
+    "count": 2
+   },
+   "2026-04": {
+    "paired_hours": 691,
+    "count": 9
+   },
+   "2026-05": {
+    "paired_hours": 715,
+    "count": 7
+   },
+   "2026-06": {
+    "paired_hours": 696,
+    "count": 8
+   },
+   "2026-07": {
+    "paired_hours": 718,
+    "count": 2
+   },
+   "2026-08": {
+    "paired_hours": 711,
+    "count": 7
+   },
+   "2026-09": {
+    "paired_hours": 702,
+    "count": 4
+   },
+   "2026-10": {
+    "paired_hours": 135,
+    "count": 0
+   }
+  },
+  "list": [
+   {
+    "close_ts": 1765897200,
+    "month": "2025-12",
+    "pair": "b",
+    "k": 7,
+    "profit_signal_c": 1.0799999999999907,
+    "profit_fill_c": 4.859999999999994,
+    "realised_c": 4.859999999999994
+   },
+   {
+    "close_ts": 1765900800,
+    "month": "2025-12",
+    "pair": "a",
+    "k": 4,
+    "profit_signal_c": 0.8500000000000019,
+    "profit_fill_c": 0.6300000000000018,
+    "realised_c": 0.6300000000000018
+   },
+   {
+    "close_ts": 1767632400,
+    "month": "2026-01",
+    "pair": "b",
+    "k": 4,
+    "profit_signal_c": 6.580000000000002,
+    "profit_fill_c": 0.08000000000000274,
+    "realised_c": 0.08000000000000274
+   },
+   {
+    "close_ts": 1773234000,
+    "month": "2026-03",
+    "pair": "b",
+    "k": 11,
+    "profit_signal_c": 0.9600000000000019,
+    "profit_fill_c": 0.2600000000000008,
+    "realised_c": 0.2600000000000008
+   },
+   {
+    "close_ts": 1774537200,
+    "month": "2026-03",
+    "pair": "a",
+    "k": 8,
+    "profit_signal_c": 0.7100000000000026,
+    "profit_fill_c": 1.0799999999999907,
+    "realised_c": 1.0799999999999907
+   },
+   {
+    "close_ts": 1776294000,
+    "month": "2026-04",
+    "pair": "a",
+    "k": 12,
+    "profit_signal_c": 1.9700000000000024,
+    "profit_fill_c": 0.9700000000000011,
+    "realised_c": 0.9700000000000011
+   },
+   {
+    "close_ts": 1776474000,
+    "month": "2026-04",
+    "pair": "b",
+    "k": 13,
+    "profit_signal_c": 0.25000000000000044,
+    "profit_fill_c": 0.28000000000000036,
+    "realised_c": 0.28000000000000036
+   },
+   {
+    "close_ts": 1776553200,
+    "month": "2026-04",
+    "pair": "b",
+    "k": 3,
+    "profit_signal_c": 0.5500000000000027,
+    "profit_fill_c": 0.6400000000000026,
+    "realised_c": 0.6400000000000026
+   },
+   {
+    "close_ts": 1776679200,
+    "month": "2026-04",
+    "pair": "a",
+    "k": 9,
+    "profit_signal_c": 1.490000000000002,
+    "profit_fill_c": 0.5100000000000018,
+    "realised_c": 0.5100000000000018
+   },
+   {
+    "close_ts": 1776902400,
+    "month": "2026-04",
+    "pair": "a",
+    "k": 12,
+    "profit_signal_c": 0.4100000000000018,
+    "profit_fill_c": 0.04000000000000026,
+    "realised_c": 0.04000000000000026
+   },
+   {
+    "close_ts": 1776970800,
+    "month": "2026-04",
+    "pair": "a",
+    "k": 6,
+    "profit_signal_c": 1.420000000000002,
+    "profit_fill_c": 0.8500000000000018,
+    "realised_c": 0.8500000000000018
+   },
+   {
+    "close_ts": 1776978000,
+    "month": "2026-04",
+    "pair": "a",
+    "k": 8,
+    "profit_signal_c": 0.8899999999999917,
+    "profit_fill_c": 0.4300000000000014,
+    "realised_c": 0.4300000000000014
+   },
+   {
+    "close_ts": 1777132800,
+    "month": "2026-04",
+    "pair": "a",
+    "k": 3,
+    "profit_signal_c": 2.0199999999999925,
+    "profit_fill_c": 0.35000000000000103,
+    "realised_c": 0.35000000000000103
+   },
+   {
+    "close_ts": 1777341600,
+    "month": "2026-04",
+    "pair": "a",
+    "k": 4,
+    "profit_signal_c": 6.929999999999998,
+    "profit_fill_c": 0.6100000000000039,
+    "realised_c": 0.6100000000000039
+   },
+   {
+    "close_ts": 1777647600,
+    "month": "2026-05",
+    "pair": "b",
+    "k": 11,
+    "profit_signal_c": 1.2700000000000016,
+    "profit_fill_c": 0.07000000000000017,
+    "realised_c": 0.07000000000000017
+   },
+   {
+    "close_ts": 1778043600,
+    "month": "2026-05",
+    "pair": "a",
+    "k": 8,
+    "profit_signal_c": 1.9099999999999917,
+    "profit_fill_c": 0.8899999999999917,
+    "realised_c": 0.8899999999999917
+   },
+   {
+    "close_ts": 1778068800,
+    "month": "2026-05",
+    "pair": "a",
+    "k": 10,
+    "profit_signal_c": 0.47000000000000264,
+    "profit_fill_c": 2.7999999999999927,
+    "realised_c": 2.7999999999999927
+   },
+   {
+    "close_ts": 1778774400,
+    "month": "2026-05",
+    "pair": "a",
+    "k": 7,
+    "profit_signal_c": 2.4100000000000037,
+    "profit_fill_c": 1.1099999999999905,
+    "realised_c": 1.1099999999999905
+   },
+   {
+    "close_ts": 1778803200,
+    "month": "2026-05",
+    "pair": "b",
+    "k": 3,
+    "profit_signal_c": 0.3000000000000018,
+    "profit_fill_c": 0.6299999999999991,
+    "realised_c": 0.6299999999999991
+   },
+   {
+    "close_ts": 1778972400,
+    "month": "2026-05",
+    "pair": "a",
+    "k": 2,
+    "profit_signal_c": 1.7200000000000044,
+    "profit_fill_c": 1.5300000000000047,
+    "realised_c": 1.5300000000000047
+   },
+   {
+    "close_ts": 1779188400,
+    "month": "2026-05",
+    "pair": "a",
+    "k": 4,
+    "profit_signal_c": 3.470000000000004,
+    "profit_fill_c": 1.4600000000000026,
+    "realised_c": 1.4600000000000026
+   },
+   {
+    "close_ts": 1781319600,
+    "month": "2026-06",
+    "pair": "b",
+    "k": 4,
+    "profit_signal_c": 2.95,
+    "profit_fill_c": 2.3400000000000016,
+    "realised_c": 2.3400000000000016
+   },
+   {
+    "close_ts": 1781326800,
+    "month": "2026-06",
+    "pair": "a",
+    "k": 11,
+    "profit_signal_c": 0.9700000000000017,
+    "profit_fill_c": 0.04000000000000026,
+    "realised_c": 0.04000000000000026
+   },
+   {
+    "close_ts": 1781510400,
+    "month": "2026-06",
+    "pair": "a",
+    "k": 11,
+    "profit_signal_c": 0.6300000000000019,
+    "profit_fill_c": 1.6500000000000021,
+    "realised_c": 1.6500000000000021
+   },
+   {
+    "close_ts": 1782432000,
+    "month": "2026-06",
+    "pair": "a",
+    "k": 10,
+    "profit_signal_c": 0.36000000000000054,
+    "profit_fill_c": 0.6000000000000005,
+    "realised_c": 0.6000000000000005
+   },
+   {
+    "close_ts": 1782457200,
+    "month": "2026-06",
+    "pair": "a",
+    "k": 12,
+    "profit_signal_c": 1.5900000000000016,
+    "profit_fill_c": 0.750000000000001,
+    "realised_c": 0.750000000000001
+   },
+   {
+    "close_ts": 1782482400,
+    "month": "2026-06",
+    "pair": "b",
+    "k": 10,
+    "profit_signal_c": 0.47000000000000064,
+    "profit_fill_c": 0.39000000000000046,
+    "realised_c": 0.39000000000000046
+   },
+   {
+    "close_ts": 1782536400,
+    "month": "2026-06",
+    "pair": "a",
+    "k": 11,
+    "profit_signal_c": 0.47000000000000064,
+    "profit_fill_c": 0.28000000000000036,
+    "realised_c": 0.28000000000000036
+   },
+   {
+    "close_ts": 1782576000,
+    "month": "2026-06",
+    "pair": "b",
+    "k": 2,
+    "profit_signal_c": 0.8099999999999985,
+    "profit_fill_c": 1.9700000000000097,
+    "realised_c": 1.9700000000000097
+   },
+   {
+    "close_ts": 1784613600,
+    "month": "2026-07",
+    "pair": "a",
+    "k": 2,
+    "profit_signal_c": 0.7000000000000037,
+    "profit_fill_c": 1.3000000000000036,
+    "realised_c": 1.3000000000000036
+   },
+   {
+    "close_ts": 1785337200,
+    "month": "2026-07",
+    "pair": "b",
+    "k": 9,
+    "profit_signal_c": 0.6400000000000016,
+    "profit_fill_c": 0.11000000000000046,
+    "realised_c": 0.11000000000000046
+   },
+   {
+    "close_ts": 1785819600,
+    "month": "2026-08",
+    "pair": "a",
+    "k": 2,
+    "profit_signal_c": 5.540000000000007,
+    "profit_fill_c": 3.310000000000005,
+    "realised_c": 3.310000000000005
+   },
+   {
+    "close_ts": 1786672800,
+    "month": "2026-08",
+    "pair": "b",
+    "k": 2,
+    "profit_signal_c": 10.03,
+    "profit_fill_c": 5.699999999999991,
+    "realised_c": 5.699999999999991
+   },
+   {
+    "close_ts": 1787173200,
+    "month": "2026-08",
+    "pair": "a",
+    "k": 6,
+    "profit_signal_c": 1.0600000000000018,
+    "profit_fill_c": 1.1099999999999905,
+    "realised_c": 1.1099999999999905
+   },
+   {
+    "close_ts": 1787436000,
+    "month": "2026-08",
+    "pair": "a",
+    "k": 11,
+    "profit_signal_c": 0.10000000000000053,
+    "profit_fill_c": 0.07000000000000017,
+    "realised_c": 0.07000000000000017
+   },
+   {
+    "close_ts": 1787547600,
+    "month": "2026-08",
+    "pair": "a",
+    "k": 9,
+    "profit_signal_c": 0.3100000000000007,
+    "profit_fill_c": 0.04000000000000026,
+    "realised_c": 0.04000000000000026
+   },
+   {
+    "close_ts": 1787763600,
+    "month": "2026-08",
+    "pair": "a",
+    "k": 3,
+    "profit_signal_c": 0.11000000000000176,
+    "profit_fill_c": 2.8500000000000036,
+    "realised_c": 2.8500000000000036
+   },
+   {
+    "close_ts": 1787961600,
+    "month": "2026-08",
+    "pair": "a",
+    "k": 9,
+    "profit_signal_c": 4.959999999999996,
+    "profit_fill_c": 12.340000000000002,
+    "realised_c": 12.340000000000002
+   },
+   {
+    "close_ts": 1788386400,
+    "month": "2026-09",
+    "pair": "b",
+    "k": 3,
+    "profit_signal_c": 1.3600000000000028,
+    "profit_fill_c": 0.4100000000000017,
+    "realised_c": 0.4100000000000017
+   },
+   {
+    "close_ts": 1788667200,
+    "month": "2026-09",
+    "pair": "b",
+    "k": 3,
+    "profit_signal_c": 0.5100000000000005,
+    "profit_fill_c": 4.520000000000002,
+    "realised_c": 4.520000000000002
+   },
+   {
+    "close_ts": 1789099200,
+    "month": "2026-09",
+    "pair": "b",
+    "k": 5,
+    "profit_signal_c": 0.7000000000000037,
+    "profit_fill_c": 0.6599999999999928,
+    "realised_c": 0.6599999999999928
+   },
+   {
+    "close_ts": 1789740000,
+    "month": "2026-09",
+    "pair": "b",
+    "k": 3,
+    "profit_signal_c": 0.01000000000000037,
+    "profit_fill_c": 0.10000000000000053,
+    "realised_c": 0.10000000000000053
+   }
+  ]
+ },
+ "description": {
+  "minutes": 57920,
+  "pre_fee_crossed_share": {
+   "a": 0.009582182320441989,
+   "b": 0.008598066298342541,
+   "c": 0.0
+  },
+  "after_fee_positive_share": {
+   "a": 0.0030214088397790056,
+   "b": 0.002572513812154696,
+   "c": 0.0
+  },
+  "mid_outside_ladder_band_share": 0.051881906077348064,
+  "best_after_fee_gap_per_hour_c": {
+   "median": -5.939999999999994,
+   "p90": -0.6800000000000004,
+   "p99": 1.2664,
+   "max": 12.340000000000002
+  }
+ },
+ "decision": {
+  "decision": "REJECT",
+  "reasons": [
+   "42 opportunities in 6405 paired hours (0.66%; the rule needs 2%)",
+   "median riskless profit 0.65\u00a2 per pair (the rule needs 1\u00a2)"
+  ]
+ }
+}

@@ -352,9 +352,10 @@ def test_report_with_ladder_summary_adds_the_same_venue_call(tmp_path: Path) -> 
     assert "Same-venue consistency: 15-minute markets vs the hourly ladder" in text
     assert "15-minute markets vs the hourly ladder: `REJECT`" in text
     assert "Same-venue consistency between the 15-minute markets" in text
+    assert "too rare and too small to build on" in text
     page = write_reports(result, tmp_path, ladder=none)[2].read_text()
     assert 'id="ladder"' in page and "Kalshi against itself" in page
-    assert "don&#x27;t disagree either" in page
+    assert "barely disagree either" in page
     some = _ladder_summary(gaps=True)
     assert decision_summary(result, None, None, some)["ladder_decision"] == "LIVE_SIZE_CHECK"
     page = write_reports(result, tmp_path, ladder=some)[2].read_text()

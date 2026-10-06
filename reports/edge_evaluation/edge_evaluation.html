@@ -109,11 +109,11 @@ a:focus-visible,summary:focus-visible{outline:2px solid var(--accent);outline-of
 <header class="top">
   <span class="eyebrow">Cross-market prediction trading · edge evaluation · edge-eval-20261006</span>
   <h1>Can a faster BTC feed beat Kalshi and Polymarket quotes after fees?</h1>
-  <p class="lede">Not on this evidence. Over 1.9 hours of live order books, Kalshi had usually repriced before a ≥ 3 bps BTC move even reached us (60% of quotes already at least halfway, three quarters within 230 ms), and taking the quote after it lost 0.78¢ per contract at 100 ms and lost 0.95¢ at 250 ms after the fee (72 moves, ±0.25¢ at two standard errors). After ≥ 5 bps moves it was +0.11 ± 0.64¢ on only 9 moves, too few to decide, so the pre-registered call is to collect more data. In a market model calibrated to public evidence, a lead-lag taker clears the 0.07·p(1−p) taker fee reliably only once makers take about 1 s or longer to re-quote after a BTC move. Holding to settlement doesn&#x27;t rescue it: on ten months of settled 15-minute markets, buying the side the options-style model favoured averaged −0.97 ± 1.24¢ per contract out of sample after fees. Kalshi&#x27;s own prices forecast settlement better than the model did.</p>
+  <p class="lede">Not on this evidence. Over 1.9 hours of live order books, Kalshi had usually repriced before a ≥ 3 bps BTC move even reached us (60% of quotes already at least halfway, three quarters within 230 ms), and taking the quote after it lost 0.78¢ per contract at 100 ms and lost 0.95¢ at 250 ms after the fee (72 moves, ±0.25¢ at two standard errors). After ≥ 5 bps moves it was +0.11 ± 0.64¢ on only 9 moves, too few to decide, so the pre-registered call is to collect more data. In a market model calibrated to public evidence, a lead-lag taker clears the 0.07·p(1−p) taker fee reliably only once makers take about 1 s or longer to re-quote after a BTC move. Holding to settlement doesn&#x27;t rescue it: on ten months of settled 15-minute markets, buying the side the options-style model favoured averaged −0.97 ± 1.24¢ per contract out of sample after fees. Kalshi&#x27;s own prices forecast settlement better than the model did. Kalshi&#x27;s own contracts barely disagree either: between its 15-minute markets and the hourly ladder that settles on the same number, a riskless trade after both fees that lasted a minute appeared in only 42 of 6,405 hours, worth a median +0.65¢ per pair.</p>
 </header>
 <section id="decision">
   <h2>Decision</h2>
-  <div class="verdicts"><div class="verdict"><span class="k">Real Kalshi books, 1.9 h live</span><span class="v more">COLLECT MORE DATA</span><span class="why">per contract after the fee, ±2 SE. ≥ 3 bps: −0.78 ± 0.25¢ at 100 ms, −0.95 ± 0.24¢ at 250 ms (72 moves); ≥ 5 bps: +0.11 ± 0.64¢ at 100 ms, −0.15 ± 0.71¢ at 250 ms (9 moves)</span></div><div class="verdict"><span class="k">History, held to settlement (15-minute markets)</span><span class="v reject">REJECT</span><span class="why">−0.97 ± 1.24¢ per contract out of sample, 2,464 trades</span></div><div class="verdict"><span class="k">Synthetic base case, Kalshi fees</span><span class="v reject">REJECT</span><span class="why">failed: out-of-sample net P&amp;L, 1 s latency stress, 1.5× fee stress, parameter stability</span></div><div class="verdict"><span class="k">Synthetic variant, Polymarket fee + 150 ms delay</span><span class="v reject">REJECT</span><span class="why">failed: out-of-sample net P&amp;L, 1 s latency stress, 1.5× fee stress, parameter stability</span></div></div>
+  <div class="verdicts"><div class="verdict"><span class="k">Real Kalshi books, 1.9 h live</span><span class="v more">COLLECT MORE DATA</span><span class="why">per contract after the fee, ±2 SE. ≥ 3 bps: −0.78 ± 0.25¢ at 100 ms, −0.95 ± 0.24¢ at 250 ms (72 moves); ≥ 5 bps: +0.11 ± 0.64¢ at 100 ms, −0.15 ± 0.71¢ at 250 ms (9 moves)</span></div><div class="verdict"><span class="k">History, held to settlement (15-minute markets)</span><span class="v reject">REJECT</span><span class="why">−0.97 ± 1.24¢ per contract out of sample, 2,464 trades</span></div><div class="verdict"><span class="k">Same venue: 15-minute vs hourly ladder</span><span class="v reject">REJECT</span><span class="why">riskless after fees in 42 of 6,405 hours (0.66%)</span></div><div class="verdict"><span class="k">Synthetic base case, Kalshi fees</span><span class="v reject">REJECT</span><span class="why">failed: out-of-sample net P&amp;L, 1 s latency stress, 1.5× fee stress, parameter stability</span></div><div class="verdict"><span class="k">Synthetic variant, Polymarket fee + 150 ms delay</span><span class="v reject">REJECT</span><span class="why">failed: out-of-sample net P&amp;L, 1 s latency stress, 1.5× fee stress, parameter stability</span></div></div>
   
 <div class="tiles">
   <div class="tile"><span class="label">Taker fee at a 50¢ price</span>
@@ -207,6 +207,38 @@ a:focus-visible,summary:focus-visible{outline:2px solid var(--accent);outline-of
       <tbody><tr><td>DVOL</td><td>0</td><td>15,780</td><td>−2.89 ± 0.81</td><td>10,860</td><td>−2.72 ± 0.88</td><td>40.8%</td></tr><tr><td>DVOL</td><td>1</td><td>15,382</td><td>−2.96 ± 0.85</td><td>10,689</td><td>−2.73 ± 0.85</td><td>38.9%</td></tr><tr><td>DVOL</td><td>2</td><td>14,822</td><td>−2.90 ± 0.86</td><td>10,404</td><td>−2.90 ± 0.91</td><td>36.9%</td></tr><tr><td>DVOL</td><td>3</td><td>14,060</td><td>−2.97 ± 0.88</td><td>9,977</td><td>−2.58 ± 0.95</td><td>35.3%</td></tr><tr><td>DVOL</td><td>5</td><td>12,394</td><td>−2.91 ± 0.85</td><td>8,953</td><td>−2.38 ± 0.98</td><td>31.4%</td></tr><tr><td>DVOL</td><td>10</td><td>8,307</td><td>−2.47 ± 0.85</td><td>6,077</td><td>−1.98 ± 0.97</td><td>23.1%</td></tr><tr><td>60-min vol</td><td>0</td><td>15,535</td><td>−1.73 ± 0.71</td><td>10,765</td><td>−1.67 ± 0.83</td><td>47.3%</td></tr><tr><td>60-min vol</td><td>1</td><td>14,712</td><td>−1.73 ± 0.76</td><td>10,378</td><td>−1.27 ± 0.85</td><td>45.4%</td></tr><tr><td>60-min vol</td><td>2</td><td>13,334</td><td>−1.87 ± 0.73</td><td>9,704</td><td>−1.15 ± 0.86</td><td>42.7%</td></tr><tr><td>60-min vol</td><td>3</td><td>11,630</td><td>−1.67 ± 0.77</td><td>8,807</td><td>−1.26 ± 0.84</td><td>39.9%</td></tr><tr><td>60-min vol</td><td>5</td><td>8,137</td><td>−1.89 ± 0.85</td><td>6,711</td><td>−1.22 ± 1.00</td><td>35.1%</td></tr><tr style="background:var(--accent-soft)"><td>60-min vol</td><td>10</td><td>2,450</td><td>−1.68 ± 1.50</td><td>2,464</td><td>−0.97 ± 1.24</td><td>29.1%</td></tr></tbody></table></div></details>
   <p class="memo" style="font-size:13.5px;color:var(--ink-2)">Picked on the in-sample markets: 60-minute realised vol, edge ≥ 10¢ (t −2.23 on 2,450 trades). Out-of-sample gates, all needed for paper trading:</p>
   <ul class="plain memo" style="font-size:13.5px;color:var(--ink-2)"><li><span class="neg">fail</span> mean P&amp;L more than two standard errors above zero</li><li><span class="neg">fail</span> still positive with fees × 1.5</li><li><span class="neg">fail</span> still positive filled two minutes later</li><li><span class="pos">pass</span> at least 200 trades</li><li><span class="neg">fail</span> no single day above 70% of the P&amp;L</li><li><span class="neg">fail</span> neighbouring thresholds profitable too</li><li><span class="neg">fail</span> positive in at least half of the months</li></ul>
+</section>
+
+<section id="ladder">
+  <h2>Kalshi against itself: 15-minute markets vs the hourly ladder</h2>
+  <p class="memo">Kalshi&#x27;s own contracts barely disagree either: between its 15-minute markets and the hourly ladder that settles on the same number, a riskless trade after both fees that lasted a minute appeared in only 42 of 6,405 hours, worth a median +0.65¢ per pair.</p>
+  <p class="memo" style="color:var(--ink-2);font-size:14px">Every hour, the 15-minute market
+  closing on the hour (YES if BTC's settlement average is at least its strike) and the hourly
+  ladder's strikes just below and above that strike settle on the same index average, so their
+  prices must nest. Three pairs of contracts pay at least $1 whatever happens; buying one for
+  less than $1 after both taker fees is a riskless profit. 6,405 hours,
+  2025-12-15 to 2026-10-06,
+  1-minute closing quotes; a rule fixed before the first run decides.</p>
+  
+<div class="tiles">
+  <div class="tile"><span class="label">Hours with a riskless trade</span>
+    <span class="value">0.66%</span>
+    <span class="note">42 of 6,405 hours, after both taker fees and still there a minute later</span></div>
+  <div class="tile"><span class="label">Median riskless profit</span>
+    <span class="value">+0.65¢</span>
+    <span class="note">per pair of contracts at the next minute's quotes; each pair pays at least $1</span></div>
+  <div class="tile"><span class="label">Prices crossed before fees</span>
+    <span class="value">0.96%</span>
+    <span class="note">of minutes, for the pair that crossed most often (fees aside)</span></div>
+  <div class="tile"><span class="label">Best hour after fees</span>
+    <span class="value pos">+12.34¢</span>
+    <span class="note">median hour −5.94¢; negative means no arbitrage</span></div>
+</div>
+  <div class="tablebox"><table>
+    <thead><tr><th>Pair</th><th>Crossed before fees</th><th>Riskless after fees</th>
+    <th>Hours (lasted 1 min)</th></tr></thead>
+    <tbody><tr><td>15-minute YES + ladder NO above</td><td>0.958%</td><td>0.302%</td><td>26</td></tr><tr><td>15-minute NO + ladder YES below</td><td>0.860%</td><td>0.257%</td><td>16</td></tr><tr><td>ladder YES below + ladder NO above</td><td>0.000%</td><td>0.000%</td><td>0</td></tr></tbody></table></div>
+  <ul class="plain memo" style="font-size:13.5px;color:var(--ink-2)"><li>42 opportunities in 6405 paired hours (0.66%; the rule needs 2%)</li><li>median riskless profit 0.65¢ per pair (the rule needs 1¢)</li></ul>
 </section>
 
 <section id="frontier">

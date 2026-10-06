@@ -61,5 +61,10 @@
    "first_close": "2026-06-12T08:45:00+00:00",
    "last_close": "2026-10-06T18:15:00+00:00"
   }
- }
+ },
+ "ladder_decision": "REJECT",
+ "ladder_reasons": [
+  "42 opportunities in 6405 paired hours (0.66%; the rule needs 2%)",
+  "median riskless profit 0.65\u00a2 per pair (the rule needs 1\u00a2)"
+ ]
 }

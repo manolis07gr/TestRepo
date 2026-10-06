@@ -6,6 +6,7 @@ Experiment `edge-eval-20261006` · git `3811f8c671f92d121e687b460a80a3cb403d3a66
 
 * **Real markets (Kalshi BTC order books, 1.9 h live): `COLLECT_MORE_DATA`** for the stale-quote taker, by the rule fixed before the run: ≥ 3 bps moves -0.78 ± 0.25¢ per contract at 100 ms after the fee, ±2 SE (72 moves); ≥ 5 bps moves +0.11 ± 0.64¢ per contract at 100 ms after the fee, ±2 SE (9 moves). See *Real-market check* below.
 * **History, held to settlement (Kalshi 15-minute BTC markets): `REJECT`** for buying the side the options-style model favours: -0.97 ± 1.24¢ per contract after fees out of sample (2,464 trades; 60-minute realised vol, edge at least 10¢ after the fee). See *Hold-to-settlement check* below.
+* **Same venue, 15-minute markets vs the hourly ladder: `REJECT`** for riskless pairs between them: 42 of 6,405 hours (0.66%) offered a riskless pair after both fees that was still there a minute later, median +0.65¢ per pair. See *Same-venue consistency* below.
 * Synthetic base case `kalshi_fee`: **`REJECT`** — oos_net_pnl: net P&L -490.20 at base@250ms; CI lower -117.04; stress_latency_viable: net -249.45 at base@1000ms; stress_cost_viable: net -177.92 at fees_x1.5@250ms; parameter_stability: 42% of 12 neighbouring settings profitable
 * Synthetic base case `polymarket_fee_speedbump`: **`REJECT`** — oos_net_pnl: net P&L -509.01 at base@250ms; CI lower -105.47; stress_latency_viable: net -341.21 at base@1000ms; stress_cost_viable: net -200.67 at fees_x1.5@250ms; parameter_stability: 50% of 12 neighbouring settings profitable
 
@@ -43,6 +44,13 @@ Maker reaction: time from seeing the move until Kalshi's mid covered half the mo
 * Forecast quality 5 minutes before close (26,762 markets): Brier score 0.1189 for Kalshi's mid vs 0.1314 for the model with DVOL and 0.1215 with 60-minute vol (lower is better). Regressing the outcome on the mid and the model-mid gap, the gap coefficient is +0.002 ± 0.044 (nothing beyond the price) with DVOL and +0.124 ± 0.087 (some information beyond the price) with 60-minute vol; 1 would mean the model is right and the price wrong.
 * Coinbase vs the settlement index (CF Benchmarks BRTI) over 27,700 quarter-hour marks: median +0.64 bp (5-95%: -1.34 to +2.77 bp), corrected for in the model.
 * **Decision `REJECT`** by the rule fixed before the first run (docs/EDGE_EVALUATION_METHOD.md section 7). Full tables: `reports/settlement_study/summary.md`.
+
+## Same-venue consistency: 15-minute markets vs the hourly ladder
+
+* Every hour the `KXBTC15M` market closing on the hour and the `KXBTCD` strikes just below and above its strike settle on the same index average, so their prices must nest. Three pairs of contracts pay at least $1 in every outcome; any of them bought for less than $1 after both taker fees is a riskless profit.
+* 6,405 paired hours, 2025-12-15 to 2026-10-06: 42 of 6,405 hours (0.66%) offered a riskless pair after both fees that was still there a minute later, median +0.65¢ per pair.
+* Before fees the prices crossed in 0.958%, 0.860%, 0.000% of minutes for the three pairs; the best after-fee result per hour has median -5.94¢ and 99th percentile 1.27¢ (negative = no arbitrage).
+* **Decision `REJECT`** by the rule fixed before the first run (docs/EDGE_EVALUATION_METHOD.md section 8). Full tables: `reports/ladder_check/summary.md`.
 
 ## 1. Data, instruments and exclusions
 
@@ -334,6 +342,7 @@ Move needed (bps of BTC) for a one-tick stale quote to clear the taker fee + 1¢
 ## 13. Next steps to reach a real-market decision
 
 * Hold-to-settlement on the options-style model is rejected on ten months of history; a new signal needs its own pre-registered test, not a re-tune of this one.
+* Same-venue consistency between the 15-minute markets and the hourly ladder is rejected: the prices nest almost always; 42 of 6,405 hours (0.66%) offered a riskless pair after both fees that was still there a minute later, median +0.65¢ per pair, too rare and too small to build on.
 * Extend the live capture to >= 14 days (`scripts/live_study.py collect`) across volatility regimes, US and Asian hours and expiry days, then re-run `scripts/live_study.py analyze`; one window is not a sample of regimes.
 * Add Polymarket BTC markets and Binance / Deribit reference feeds to the same capture to test the cross-venue and options-led signals on real books.
 * Only if an edge cell stays positive on the long sample: approve mappings, build a dataset (`cma dataset build`), run `cma stress` and `cma leadlag`, and require every promotion gate before forward paper trading.

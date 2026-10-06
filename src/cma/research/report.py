@@ -1008,7 +1008,8 @@ def render_markdown(
     elif ladder_dec == "REJECT":
         w(
             "* Same-venue consistency between the 15-minute markets and the hourly ladder is "
-            "rejected: the prices nest as they should, with no riskless gap after fees to take."
+            f"rejected: the prices nest almost always; {ladder_summary_text(ladder or {})}, "
+            "too rare and too small to build on."
         )
     for item in (
         steps_live
