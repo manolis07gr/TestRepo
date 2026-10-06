@@ -71,3 +71,47 @@ base case re-runs its criterion cell with the production stop on and reports wha
 
 Synthetic results bound what is plausible; they cannot promote a strategy (synthetic
 mappings are never APPROVED_PAPER) and they are not estimates of real-market P&L.
+
+## 6. Real-market check (`cma.research.live_study`)
+
+The synthetic study says what maker speed a latency taker needs; the live study measures
+what real Kalshi makers do. It runs on the raw store, on the *receive-time* timeline of the
+collecting machine (what that machine could actually have acted on).
+
+1. **Capture.** `scripts/live_study.py collect --duration 6900` records Kalshi's
+   authenticated WebSocket order books for the BTC above-strike series (`KXBTCD`,
+   `KXBTC15M`; new markets subscribed within a minute of listing) next to the Coinbase
+   BTC-USD ticker.
+2. **Replay.** `stream_quotes` rebuilds every book in one pass and keeps only top-of-book
+   changes. A momentarily crossed book (the deltas of one match arrive one at a time) is
+   skipped rather than invalidated; a snapshot whose sequence restarted (re-subscription
+   after a reconnect) replaces the book; sequence gaps and negative sizes invalidate a book
+   until its next snapshot. Per-venue counters land in `summary.json` (`book_quality`).
+3. **Moves.** A move is a 1 s Coinbase log return of at least 3, 5 or 10 bps (5 s cooldown).
+   Each move is paired with every contract 90 s to 6 h from close whose model fair value is
+   in 10–90¢ and moves by at least 1¢ (log-normal digital on the 60 s settlement average,
+   volatility from Deribit DVOL).
+4. **Maker reaction.** Time from seeing the move until Kalshi's mid covers half the model's
+   predicted repricing (0 if it already had; right-censored at 30 s, censoring-aware
+   median). This is the quantity the synthetic frontier is indexed by. The life of the
+   quote a taker would hit is reported too, but it ends at any re-quote or fill and so
+   understates the repricing lag.
+5. **Executable edge.** The book as observed L = 0/100/250/500/1000 ms after the move,
+   valued at Kalshi's own mid 1 s before the move plus the model's change in fair value
+   (market-anchored: removes level disagreement such as tails, vol and basis, keeps the
+   delta a latency trader exploits), minus the price and the Kalshi taker fee for 10
+   contracts (rounded up per order). The same valuation at fixed 10 s times without a move
+   is the no-news baseline (about minus half the spread plus the fee).
+6. **Uncertainty.** Every in-play strike reacts to the same move, so standard errors are
+   cluster-robust (CR1) with the move as the cluster, pooled over series per threshold.
+7. **Decision rule (fixed before the first live run).** `REJECT` the stale-quote taker when
+   no threshold shows a positive pooled market-anchored edge at 100 or 250 ms and the 5 bps
+   edge at 100 ms is negative by more than two clustered standard errors on at least 30
+   moves; otherwise `COLLECT_MORE_DATA`. One live window never promotes to paper:
+   `FORWARD_PAPER_CANDIDATE` needs the ≥ 14-day collection, out-of-sample test and the
+   promotion gates.
+
+`scripts/live_study.py analyze --out reports/live_study` writes `summary.json` and
+`summary.md`; `cma report --evaluation reports/edge_evaluation/evaluation.json --out
+reports/edge_evaluation --live reports/live_study/summary.json` puts the live call and a
+real-market section into the decision report, `decision.json` and the HTML page.

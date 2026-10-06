@@ -9,8 +9,12 @@
 | `api.exchange.coinbase.com`, `ws-feed.exchange.coinbase.com` | BTC-USD reference (BRTI constituent) |
 | `www.deribit.com` | option chain / DVOL implied volatility |
 
-Secrets are read from the environment only (`KALSHI_API_KEY_ID`, `KALSHI_PRIVATE_KEY_PATH`);
-config files may only name the environment variables. Logs pass through a redacting filter.
+Secrets are read from the environment only (`KALSHI_API_KEY_ID`, and the RSA key as
+`KALSHI_PRIVATE_KEY` inline or `KALSHI_PRIVATE_KEY_PATH`); config files may only name the
+environment variables. The inline key may be pasted as a full PEM, with `\n` escapes, or as
+just the base64 body. `python scripts/check_kalshi_auth.py` verifies the credentials with an
+authenticated WebSocket handshake without printing them. Logs pass through a redacting
+filter.
 
 ## Collect
 
@@ -22,6 +26,19 @@ cma collect --config config/base.yaml --duration 1209600 --report-every 60
 The collector prints `health_report()` (feed connection state, message rates, reconnects,
 gaps, source→receive latency, book validity, quarantine counts, open incidents). Books are
 invalidated on disconnect and re-validated only by a fresh snapshot.
+
+## Live staleness study
+
+```bash
+python scripts/live_study.py collect --duration 6900 --report-every 60   # ~100 MB/min raw
+python scripts/live_study.py analyze --out reports/live_study            # ~15-30 min / 2 h
+cma report --evaluation reports/edge_evaluation/evaluation.json \
+  --out reports/edge_evaluation --live reports/live_study/summary.json
+```
+
+Uses `config/base.yaml` + `config/live_study.yaml` (raw store `data/live_study/raw`). Analysis
+streams the raw store once, so memory follows top-of-book changes rather than raw messages.
+Method and the pre-registered decision rule: `docs/EDGE_EVALUATION_METHOD.md` section 6.
 
 ## Map and review
 
