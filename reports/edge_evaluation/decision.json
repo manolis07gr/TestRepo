@@ -37,5 +37,29 @@
   "start": "2026-10-06T14:16:31.919540229Z",
   "end": "2026-10-06T16:12:36.154993494Z",
   "hours": 1.9345098481291667
+ },
+ "settlement_decision": "REJECT",
+ "settlement_reasons": [
+  "selected 60-minute realised vol, edge \u2265 10\u00a2 (in-sample t -2.23, 2450 trades); no specification made money in-sample either",
+  "out of sample: -0.97c per contract \u00b1 1.24 (2 SE) on 2464 trades",
+  "gate oos_mean_above_2se: FAIL",
+  "gate fees_x1_5_positive: FAIL",
+  "gate two_minute_fill_positive: FAIL",
+  "gate min_trades: pass",
+  "gate top_day_share: FAIL",
+  "gate neighbours_profitable: FAIL",
+  "gate months_positive: FAIL"
+ ],
+ "settlement_period": {
+  "in_sample": {
+   "markets": 16529,
+   "first_close": "2025-12-15T20:30:00+00:00",
+   "last_close": "2026-06-12T08:30:00+00:00"
+  },
+  "out_of_sample": {
+   "markets": 11020,
+   "first_close": "2026-06-12T08:45:00+00:00",
+   "last_close": "2026-10-06T18:15:00+00:00"
+  }
  }
 }

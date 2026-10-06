@@ -549,6 +549,12 @@ def _spec_key(vol: str, theta: float) -> str:
     return f"{vol}|{theta:g}"
 
 
+def spec_label(vol: str, theta_c: float) -> str:
+    """'Deribit DVOL, edge >= 2c' for a grid key's parts."""
+    name = "Deribit DVOL" if vol == "dvol" else "60-minute realised vol"
+    return f"{name}, edge ≥ {theta_c:g}¢"
+
+
 def select_spec(grid: Mapping[str, Mapping[str, Any]], cfg: SettlementConfig) -> str | None:
     """Highest in-sample t-statistic among specifications with enough trades."""
     best: tuple[float, str] | None = None
@@ -601,7 +607,13 @@ def settlement_decision(result: Mapping[str, Any], cfg: SettlementConfig) -> dic
     se = oos["se_c"]
     ins = sel["in_sample"]
     reasons = [
-        f"selected {sel['spec']} (in-sample t {_num(ins['t'], 2)}, {ins['n']} trades)",
+        f"selected {spec_label(sel['vol'], sel['theta_c'])} (in-sample t {_num(ins['t'], 2)}, "
+        f"{ins['n']} trades)"
+        + (
+            "; no specification made money in-sample either"
+            if (ins.get("mean_c") or 0.0) <= 0
+            else ""
+        ),
         f"out of sample: {_num(mean, 2, signed=True)}c per contract"
         + (f" ± {2 * se:.2f} (2 SE)" if se else "")
         + f" on {oos['n']} trades",
@@ -725,6 +737,9 @@ def analyze(
             if usable
             else None,
             "result_matches_settlement_values": settled_consistent,
+            "markets_with_settlement_values": sum(
+                1 for m in usable if m.expiration_value is not None and m.floor_strike is not None
+            ),
             "coinbase_minutes": int(ref.cb_start.size),
             "dvol_hours": int(ref.dv_ts.size),
             "basis": basis.stats_bp(),
@@ -788,7 +803,8 @@ def render_markdown(result: Mapping[str, Any]) -> str:
         f"* {d['markets_usable']} settled `KXBTC15M` markets with candles "
         f"(of {d['markets_listed']} listed); YES settled {_pct(d['yes_rate'])} of the time. "
         f"Kalshi's result agrees with its own settlement values in "
-        f"{d['result_matches_settlement_values']} markets.",
+        f"{d['result_matches_settlement_values']} of the "
+        f"{d.get('markets_with_settlement_values', 'n/a')} markets that publish both.",
         f"* In-sample: {_span_text(d['in_sample'])}. Out-of-sample: "
         f"{_span_text(d['out_of_sample'])}.",
     ]
@@ -824,7 +840,7 @@ def render_markdown(result: Mapping[str, Any]) -> str:
     if sel:
         w += [
             "",
-            f"## Selected specification out of sample ({sel['spec']})",
+            f"## Selected specification out of sample ({spec_label(sel['vol'], sel['theta_c'])})",
             "",
             "| Variant | Trades | P&L (¢/contract) | t |",
             "|---|---:|---:|---:|",

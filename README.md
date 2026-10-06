@@ -16,6 +16,13 @@ fees, spread, depth, latency, partial fills and adverse selection. Built to the
 > (+0.11 ± 0.64¢) cannot decide. In a calibrated simulation through the production pipeline a lead-lag
 > *taker* clears the 0.07·p(1−p) fee only when makers take ≳1 s to re-quote; both synthetic base cases are
 > **REJECT**.
+>
+> History, held to settlement ([`reports/settlement_study/summary.md`](reports/settlement_study/summary.md)):
+> **REJECT** by a rule committed before the first run. On 27,549 settled Kalshi `KXBTC15M` markets
+> (Dec 2025 – Oct 2026, 1-minute bid/ask), buying the side an options-style model favoured and holding it
+> to settlement lost money in every specification, in and out of sample; the selected one made
+> −0.97 ± 1.24¢ per contract (2,464 trades in 11,020 out-of-sample markets). Kalshi's mid forecast settlement better than
+> the model (Brier 0.119 vs 0.122–0.131 five minutes before close) and is well calibrated.
 
 ## What is in the box
 

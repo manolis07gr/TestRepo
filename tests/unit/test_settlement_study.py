@@ -204,7 +204,9 @@ def test_ols_hc1_recovers_coefficients() -> None:
 def _selected(**over: Any) -> dict[str, Any]:
     base = {
         "spec": "dvol|2",
-        "in_sample": {"t": 3.0, "n": 900},
+        "vol": "dvol",
+        "theta_c": 2.0,
+        "in_sample": {"t": 3.0, "n": 900, "mean_c": 1.2},
         "out_of_sample": {"mean_c": 1.0, "se_c": 0.2, "t": 5.0, "n": 600},
         "oos_fee_stress": {"mean_c": 0.5},
         "oos_delay_stress": {"mean_c": 0.4},
@@ -228,6 +230,12 @@ def test_decision_rule() -> None:
     assert "gate two_minute_fill_positive: FAIL" in out["reasons"]
     loss = _selected(out_of_sample={"mean_c": -0.2, "se_c": 0.1, "t": -2.0, "n": 600})
     assert ss.settlement_decision({"selected": loss}, CFG)["decision"] == "REJECT"
+    none_in = _selected(
+        in_sample={"t": -2.2, "n": 900, "mean_c": -1.7}, out_of_sample=loss["out_of_sample"]
+    )
+    reasons = ss.settlement_decision({"selected": none_in}, CFG)["reasons"]
+    assert reasons[0].startswith("selected Deribit DVOL, edge ≥ 2¢ (in-sample t -2.20")
+    assert reasons[0].endswith("no specification made money in-sample either")
 
 
 # ----------------------------------------------------------------------------- end to end

@@ -350,18 +350,24 @@ def settlement_markdown(settle: Mapping[str, Any]) -> list[str]:
     )
     if five and "brier" in five:
         br = five["brier"]
-        gap = five["outcome_on_mid_and_model_gap"]["dvol"]
+        gaps = five["outcome_on_mid_and_model_gap"]
+
+        def reading(g: Mapping[str, Any]) -> str:
+            lo, hi = g["gap_coef"] - 2 * g["gap_se"], g["gap_coef"] + 2 * g["gap_se"]
+            band = f"{g['gap_coef']:+.3f} ± {2 * g['gap_se']:.3f}"
+            if lo > 0:
+                return f"{band} (some information beyond the price)"
+            if hi < 0:
+                return f"{band} (worse than the price alone)"
+            return f"{band} (nothing beyond the price)"
+
         out.append(
             f"* Forecast quality 5 minutes before close ({_n(five.get('n'))} markets): Brier "
             f"score {br['kalshi_mid']:.4f} for Kalshi's mid vs {br['model_dvol']:.4f} for the "
-            f"model (DVOL) and {br['model_rv60']:.4f} (60-minute vol), lower is better. "
-            f"Regressing the outcome on the mid and the model-mid gap gives a gap coefficient "
-            f"of {gap['gap_coef']:+.3f} ± {2 * gap['gap_se']:.3f}: "
-            + (
-                "the model adds information the price does not contain."
-                if gap["gap_coef"] - 2 * gap["gap_se"] > 0
-                else "the model adds nothing the price does not already contain."
-            )
+            f"model with DVOL and {br['model_rv60']:.4f} with 60-minute vol (lower is "
+            "better). Regressing the outcome on the mid and the model-mid gap, the gap "
+            f"coefficient is {reading(gaps['dvol'])} with DVOL and {reading(gaps['rv60'])} "
+            "with 60-minute vol; 1 would mean the model is right and the price wrong."
         )
     b = d.get("basis", {})
     if b.get("marks"):

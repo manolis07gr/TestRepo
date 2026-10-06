@@ -1093,7 +1093,12 @@ def _settlement_section(settle: Mapping[str, Any]) -> str:
         (x for x in settle.get("diagnostics", []) if x.get("minutes_before_close") == 5), {}
     )
     br = five.get("brier") or {}
-    gap = (five.get("outcome_on_mid_and_model_gap") or {}).get("dvol") or {}
+    vol = str(sel.get("vol") or "dvol")  # the tiles follow the selected volatility input
+    vol_name = "DVOL" if vol == "dvol" else "60-minute vol"
+    other = "rv60" if vol == "dvol" else "dvol"
+    gaps = five.get("outcome_on_mid_and_model_gap") or {}
+    gap = gaps.get(vol) or {}
+    gap_other = gaps.get(other) or {}
     basis = d.get("basis") or {}
     o = sel.get("out_of_sample") or {}
     spec = (
@@ -1109,11 +1114,11 @@ def _settlement_section(settle: Mapping[str, Any]) -> str:
     <span class="note">per contract after fees, ± {_fmt(2 * (o.get("se_c") or 0), 2)} (2 SE);
     {_fmt(o.get("n"), 0)} trades; {html.escape(spec)}</span></div>
   <div class="tile"><span class="label">Forecast error 5 min before close</span>
-    <span class="value">{_fmt(br.get("kalshi_mid"), 4)} <span style="font-size:15px;color:var(--ink-3)">vs</span> {_fmt(br.get("model_dvol"), 4)}</span>
-    <span class="note">Brier score, Kalshi mid vs model (DVOL); lower is better</span></div>
+    <span class="value">{_fmt(br.get("kalshi_mid"), 4)} <span style="font-size:15px;color:var(--ink-3)">vs</span> {_fmt(br.get("model_" + vol), 4)}</span>
+    <span class="note">Brier score, Kalshi mid vs model ({vol_name}); lower is better; with {"60-minute vol" if other == "rv60" else "DVOL"}: {_fmt(br.get("model_" + other), 4)}</span></div>
   <div class="tile"><span class="label">What the model adds to the price</span>
     <span class="value">{_fmt(gap.get("gap_coef"), 2, True)}</span>
-    <span class="note">outcome on mid + model–mid gap; ± {_fmt(2 * (gap.get("gap_se") or 0), 2)}; 0 = nothing, 1 = model is right</span></div>
+    <span class="note">outcome on mid + model–mid gap ({vol_name}), ± {_fmt(2 * (gap.get("gap_se") or 0), 2)}; 0 = nothing, 1 = model is right; with {"60-minute vol" if other == "rv60" else "DVOL"}: {_fmt(gap_other.get("gap_coef"), 2, True)}</span></div>
   <div class="tile"><span class="label">Coinbase vs settlement index</span>
     <span class="value">{_fmt(basis.get("median_bp"), 1, True)} bp</span>
     <span class="note">median over {_fmt(basis.get("marks"), 0)} quarter-hour marks; corrected in the model</span></div>
