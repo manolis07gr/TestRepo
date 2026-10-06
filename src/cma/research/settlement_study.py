@@ -10,7 +10,7 @@ docs/EDGE_EVALUATION_METHOD.md):
 * Decision minutes: candles ending 2..13 minutes after open, sane book, fair in 10-90c.
 * Model: log-normal digital on the settlement average; spot = Coinbase close x the
   Coinbase-to-BRTI basis (median of the last 8 quarter-hour marks); volatility = Deribit
-  DVOL (primary) or 60-minute realised volatility.
+  DVOL (primary; last finished hour) or 60-minute realised volatility.
 * Trade: first minute per market whose after-fee edge on the better side is >= theta; one
   trade of 100 contracts, held to settlement; filled at the NEXT minute's quote (primary),
   the same minute's (optimistic) or two minutes later (stress).
@@ -74,7 +74,8 @@ class SettlementConfig:
     rv_window_min: int = 60
     rv_min_returns: int = 30
     max_ref_staleness_s: int = 300
-    max_dvol_staleness_s: int = 3600
+    dvol_bar_s: int = 3600  # hourly DVOL closes, usable once the hour has finished
+    max_dvol_staleness_s: int = 3 * 3600
     in_sample_frac: float = 0.60
     min_trades: int = 200
     fee_stress: float = 1.5
@@ -90,11 +91,11 @@ class SettlementConfig:
 
 
 class Reference:
-    """Coinbase 1-minute candles and DVOL with as-of lookups (no look-ahead).
+    """Coinbase 1-minute candles and hourly DVOL with as-of lookups (no look-ahead).
 
-    A value "at t" comes from the last bar that had finished by t: Coinbase candles and
-    DVOL rows are stamped with their start, so the bar starting at t - 60 s is the latest
-    one complete at t."""
+    A value "at t" comes from the last bar that had finished by t: bars are stamped with
+    their start, so the Coinbase candle starting at t - 60 s and the DVOL hour starting at
+    t - 3600 s are the latest ones complete at t."""
 
     def __init__(
         self,
@@ -151,8 +152,9 @@ class Reference:
 
     def sigma(self, t: int, kind: str) -> float | None:
         if kind == "dvol":
-            i = int(np.searchsorted(self.dv_ts, t - MINUTE, side="right")) - 1
-            if i < 0 or (t - MINUTE) - int(self.dv_ts[i]) > self.cfg.max_dvol_staleness_s:
+            bar = self.cfg.dvol_bar_s
+            i = int(np.searchsorted(self.dv_ts, t - bar, side="right")) - 1
+            if i < 0 or (t - bar) - int(self.dv_ts[i]) > self.cfg.max_dvol_staleness_s:
                 return None
             return float(self.dv_val[i]) / 100.0
         if kind == "rv60":
@@ -724,7 +726,7 @@ def analyze(
             else None,
             "result_matches_settlement_values": settled_consistent,
             "coinbase_minutes": int(ref.cb_start.size),
-            "dvol_minutes": int(ref.dv_ts.size),
+            "dvol_hours": int(ref.dv_ts.size),
             "basis": basis.stats_bp(),
         },
         "grid": grid,
@@ -797,8 +799,8 @@ def render_markdown(result: Mapping[str, Any]) -> str:
             f"{b['median_bp']:+.2f} bp (5–95%: {b['p05_bp']:+.2f} to {b['p95_bp']:+.2f} bp)."
         )
     w.append(
-        f"* Reference data: {d['coinbase_minutes']} Coinbase minutes, {d['dvol_minutes']} DVOL "
-        "minutes."
+        f"* Reference data: {d['coinbase_minutes']} Coinbase minutes, {d['dvol_hours']} hourly "
+        "DVOL closes."
     )
     w += [
         "",

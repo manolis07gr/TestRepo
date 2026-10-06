@@ -184,7 +184,7 @@ def test_fetch_coinbase_and_dvol_chunks_resume_and_follow_continuations(tmp_path
             return httpx.Response(200, json=rows)
         calls["deribit"] += 1
         lo, hi = int(req.url.params["start_timestamp"]), int(req.url.params["end_timestamp"])
-        pts = list(range(lo, hi + 1, 60_000))
+        pts = list(range(lo, hi + 1, 3_600_000))
         page, rest = pts[-600:], pts[:-600]
         data = [[t, 0, 0, 0, 40.0 + t / 1e12] for t in page]
         cont = rest[-1] if rest else None
@@ -215,9 +215,9 @@ def test_fetch_coinbase_and_dvol_chunks_resume_and_follow_continuations(tmp_path
     )
     assert n == 1
     dv = sd.load_chunked_rows(sd.dvol_path(tmp_path))
-    assert len(dv) == sd.DVOL_CHUNK_MIN  # 600 + 400 over two pages
+    assert len(dv) == sd.DVOL_CHUNK_BARS  # 600 + 400 hourly closes over two pages
     assert calls["deribit"] == 2
-    assert dv[0][0] == start
+    assert dv[0][0] == start - start % 3600
 
 
 def test_load_chunked_rows_dedups_and_skips_a_cut_line(tmp_path: Path) -> None:

@@ -12,7 +12,8 @@ Files (one JSON document per line):
 * ``kalshi_candles_<SERIES>.jsonl``  ``{"ticker", "candles": [[end_ts, bid_o, bid_h, bid_l,
   bid_c, ask_o, ask_h, ask_l, ask_c, volume], ...]}`` (dollars, ``null`` when absent)
 * ``coinbase_btcusd_1m.jsonl``       ``{"start", "rows": [[ts, o, h, l, c, v], ...]}``
-* ``deribit_dvol_1m.jsonl``          ``{"start", "rows": [[ts, close_pct], ...]}``
+* ``deribit_dvol_1h.jsonl``          ``{"start", "rows": [[ts, close_pct], ...]}`` (hourly:
+  Deribit serves 1-minute DVOL only from about May 2026, hourly over the whole period)
 
 Kalshi serves markets settled before its historical cutoff only from ``/historical/...``;
 the two endpoints spell candle fields differently (``close_dollars`` / ``close``).
@@ -48,7 +49,8 @@ log = logging.getLogger(__name__)
 COINBASE_CANDLES_URL = "https://api.exchange.coinbase.com/products/BTC-USD/candles"
 DVOL_HISTORY_URL = "https://www.deribit.com/api/v2/public/get_volatility_index_data"
 COINBASE_CHUNK_MIN = 300  # Coinbase returns at most 300 candles per request
-DVOL_CHUNK_MIN = 1000
+DVOL_RESOLUTION_S = 3600
+DVOL_CHUNK_BARS = 1000
 SECONDS_PER_MIN = 60
 
 type Candle = tuple[
@@ -161,7 +163,7 @@ def coinbase_path(data_dir: Path) -> Path:
 
 
 def dvol_path(data_dir: Path) -> Path:
-    return data_dir / "deribit_dvol_1m.jsonl"
+    return data_dir / "deribit_dvol_1h.jsonl"
 
 
 def _lines(path: Path) -> Iterator[dict[str, Any]]:
@@ -408,13 +410,13 @@ async def fetch_dvol(
 ) -> int:
     async def one(start: int) -> list[list[float]]:
         lo_ms = start * 1000
-        hi_ms = (start + (DVOL_CHUNK_MIN - 1) * SECONDS_PER_MIN) * 1000
+        hi_ms = (start + (DVOL_CHUNK_BARS - 1) * DVOL_RESOLUTION_S) * 1000
         rows: dict[int, float] = {}
         end_ms: int | None = hi_ms
         while end_ms is not None and end_ms >= lo_ms:
             params = {
                 "currency": "BTC",
-                "resolution": 60,
+                "resolution": DVOL_RESOLUTION_S,
                 "start_timestamp": lo_ms,
                 "end_timestamp": end_ms,
             }
@@ -430,7 +432,8 @@ async def fetch_dvol(
             end_ms = int(cont)
         return [[t, rows[t]] for t in sorted(rows)]
 
-    starts = _chunk_starts(start_ts, end_ts, DVOL_CHUNK_MIN)
+    first = start_ts - start_ts % DVOL_RESOLUTION_S
+    starts = list(range(first, end_ts, DVOL_CHUNK_BARS * DVOL_RESOLUTION_S))
     return await _fetch_chunks(dvol_path(data_dir), starts, one, concurrency=concurrency)
 
 

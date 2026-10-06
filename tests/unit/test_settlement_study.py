@@ -54,7 +54,7 @@ def _world(
     for _ in range(minutes):
         price.append(price[-1] * math.exp(rng.gauss(0.0, sig)))
     coinbase = [[T0 + 60 * j, *([price[j + 1]] * 4), 1.0] for j in range(minutes)]
-    dvol = [[T0 + 60 * j, dvol_pct] for j in range(minutes)]
+    dvol = [[T0 + 3600 * h, dvol_pct] for h in range(minutes // 60 + 2)]  # hourly closes
 
     def at(t: int) -> float:
         return price[(t - T0) // 60]
@@ -109,12 +109,16 @@ def test_best_side_buys_yes_below_fair_and_no_above_it() -> None:
 
 def test_reference_reads_only_finished_bars() -> None:
     cb = [[T0 + 60 * j, 100.0 + j, 101.0 + j, 99.0 + j, 100.5 + j, 1.0] for j in range(200)]
-    dv = [[T0 + 60 * j, 40.0 + j] for j in range(200)]
+    dv = [[T0 + 3600 * h, 40.0 + h] for h in range(10)]  # hourly DVOL closes
     ref = ss.Reference(cb, dv, CFG)
     t = T0 + 60 * 10
     assert ref.spot(t) == pytest.approx(100.5 + 9)  # the bar that started at t - 60
     assert ref.spot(t + 59) == pytest.approx(100.5 + 9)  # bar 10 has not finished yet
-    assert ref.sigma(t, "dvol") == pytest.approx((40.0 + 9) / 100)
+    assert ref.sigma(t, "dvol") is None  # the first hour has not finished
+    assert ref.sigma(T0 + 3600, "dvol") == pytest.approx(0.40)
+    assert ref.sigma(T0 + 2 * 3600 - 1, "dvol") == pytest.approx(0.40)  # hour 1 still open
+    assert ref.sigma(T0 + 2 * 3600, "dvol") == pytest.approx(0.41)
+    assert ref.sigma(T0 + 14 * 3600, "dvol") is None  # last close older than 3 hours
     assert ref.minute_average(t) == pytest.approx((100 + 101 + 99 + 100.5) / 4 + 9)
     assert ref.spot(T0) is None  # nothing finished yet
     assert ref.spot(T0 + 60 * 400) is None  # stale beyond 5 minutes

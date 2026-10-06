@@ -140,6 +140,10 @@ full history** (only a two-day sample was inspected, for data quality).
    Coinbase-to-BRTI basis, the median over the last 8 quarter-hour marks (Coinbase minute
    typical price vs the BRTI mark; only marks already published). Volatility: Deribit DVOL
    (primary) or the trailing 60-minute realised volatility of Coinbase 1-minute returns.
+   DVOL is read as the close of the last *finished* hour: Deribit serves 1-minute DVOL only
+   from about May 2026 but hourly over the whole period, and a 30-day implied-vol index
+   barely moves within an hour. (Amended before the first run, when the fetch found the
+   1-minute history missing; no results had been computed.)
 4. **Trade.** In each market, the first decision minute where the model's edge after the
    Kalshi taker fee on the better side (buy YES at the ask, or NO at 1 − bid) is at least
    θ ∈ {0, 1, 2, 3, 5, 10}¢. One trade per market, 100 contracts, held to settlement.
