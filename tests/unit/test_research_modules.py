@@ -29,7 +29,8 @@ from cma.observability.incidents import Incident, IncidentLog
 from cma.observability.logs import configure_logging
 from cma.observability.metrics import MetricsRegistry
 from cma.research.hurdle import break_even_staleness_ms, hurdle_row, hurdle_table
-from cma.research.report import render_markdown, write_reports
+from cma.research.live_study import live_decision
+from cma.research.report import decision_summary, render_markdown, write_reports
 from cma.research.synthetic import SyntheticMarketConfig, generate_market
 from cma.storage.db import open_database
 from tests.factories import snapshot, trade
@@ -197,8 +198,8 @@ def test_synthetic_truth_matches_production_fair_value_inside_and_before_window(
             assert truth == pytest.approx(model, abs=1e-6), (strike, secs_left)
 
 
-def test_report_rendering_from_minimal_result(tmp_path: Path) -> None:
-    result = {
+def _minimal_result() -> dict[str, object]:
+    return {
         "plan": {"criterion_latency_ms": 250},
         "manifest": {"experiment_id": "x", "git_commit": "abc", "config_hash": "c", "seed": 1},
         "real_market_decision": "COLLECT_MORE_DATA",
@@ -217,10 +218,77 @@ def test_report_rendering_from_minimal_result(tmp_path: Path) -> None:
         "structural": {"family_samples": 0, "violations_after_costs": 0, "net_total": "0"},
         "hurdle": [r.to_dict() for r in hurdle_table(fee_ids=("kalshi-standard",))],
     }
+
+
+def test_report_rendering_from_minimal_result(tmp_path: Path) -> None:
+    result = _minimal_result()
     text = render_markdown(result)
     assert "COLLECT_MORE_DATA" in text and "Edge frontier" in text
     paths = write_reports(result, tmp_path)
     assert all(p.exists() for p in paths)
+
+
+def _live_summary(mean_100: float) -> dict[str, object]:
+    def cell(mean: float) -> dict[str, object]:
+        return {"n": 400, "moves": 60, "share_positive": 0.2, "mean_c": mean, "se_c": 0.2}
+
+    edges = {"0": cell(1.5), "100": cell(mean_100), "250": cell(mean_100 - 0.5)}
+    row = {
+        "threshold_bps": 5.0,
+        "series": "all",
+        "samples": 400,
+        "moves": 60,
+        "lifetime_ms": {"p25": 40.0, "median": 110.0, "p75": 300.0, "share_beyond_horizon": 0.02},
+        "edge_by_latency": edges,
+        "anchored_edge_by_latency": edges,
+    }
+    live: dict[str, object] = {
+        "window": {"start": "2026-10-06T14:16:30Z", "end": "2026-10-06T16:11:27Z", "hours": 1.9},
+        "reference": {
+            "updates": 150_000,
+            "realized_vol": 0.4,
+            "dvol_points": 115,
+            "dvol_mean": 0.42,
+        },
+        "contracts": {"above_strike": 300, "with_quotes": 280, "quote_updates_by_series": {}},
+        "config": {"latencies_ms": [0, 100, 250]},
+        "moves_by_threshold": {"3": 300, "5": 60, "10": 9},
+        "summary": [{**row, "series": "KXBTCD"}],
+        "pooled": [row],
+        "baseline": {"n": 600, "share_positive": 0.4, "mean_c": 0.3},
+        "baseline_anchored": {"n": 600, "share_positive": 0.03, "mean_c": -2.2},
+        "lead_lag": [],
+        "raw_messages": 14_000_000,
+    }
+    live["decision"] = live_decision(live)
+    return live
+
+
+def test_report_with_live_summary_takes_the_real_market_call(tmp_path: Path) -> None:
+    result = _minimal_result()
+    live = _live_summary(-1.0)
+    assert decision_summary(result, live)["real_market_decision"] == "REJECT"
+    text = render_markdown(result, live)
+    assert "Real-market check" in text and "1.9 h live): `REJECT`" in text
+    assert "+1.50 ± 0.40" in text and "No real venue data was examined" not in text
+    page = write_reports(result, tmp_path, live=live)[2].read_text()
+    assert 'id="live"' in page and "Not on real Kalshi books" in page and "lost 1.00¢" in page
+    positive = _live_summary(0.8)
+    assert decision_summary(result, positive)["real_market_decision"] == "COLLECT_MORE_DATA"
+    page = write_reports(result, tmp_path, live=positive)[2].read_text()
+    assert "Not proven on real Kalshi books" in page and "netted 0.80¢" in page
+
+
+def test_cli_report_accepts_a_live_summary(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    ev, lv = tmp_path / "evaluation.json", tmp_path / "summary.json"
+    ev.write_text(json.dumps(_minimal_result()))
+    lv.write_text(json.dumps(_live_summary(-1.0)))
+    out = tmp_path / "out"
+    assert main(["report", "--evaluation", str(ev), "--out", str(out), "--live", str(lv)]) == 0
+    assert json.loads((out / "decision.json").read_text())["real_market_decision"] == "REJECT"
+    assert "reports" in capsys.readouterr().out
 
 
 def test_cli_parser_hurdle_live_and_db(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:

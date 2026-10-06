@@ -248,7 +248,8 @@ def cmd_report(args: argparse.Namespace) -> int:
     from cma.research.report import write_reports
 
     result = json.loads(Path(args.evaluation).read_text())
-    paths = write_reports(result, Path(args.out))
+    live = json.loads(Path(args.live).read_text()) if args.live else None
+    paths = write_reports(result, Path(args.out), live=live)
     _print({"reports": [str(p) for p in paths]})
     return 0
 
@@ -373,6 +374,7 @@ def build_parser() -> argparse.ArgumentParser:
     s = sub.add_parser("report", help="render reports from an evaluation.json")
     s.add_argument("--evaluation", required=True)
     s.add_argument("--out", required=True)
+    s.add_argument("--live", help="live-study summary.json (scripts/live_study.py analyze)")
     s.set_defaults(func=cmd_report)
 
     s = sub.add_parser("smoke", help="paper-mode smoke test against mock feeds")

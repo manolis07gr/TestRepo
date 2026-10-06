@@ -140,10 +140,141 @@ def risk_overlay_sentence(base: Mapping[str, Any]) -> str:
     )
 
 
-def decision_summary(result: Mapping[str, Any]) -> dict[str, Any]:
+def _n(x: Any) -> str:
+    return f"{int(x):,}" if isinstance(x, int | float) and math.isfinite(x) else "n/a"
+
+
+def live_primary(live: Mapping[str, Any]) -> Mapping[str, Any] | None:
+    """Pooled (all series) row of the live study at its primary move threshold."""
+    from cma.research.live_study import PRIMARY_THRESHOLD_BPS
+
+    return next(
+        (r for r in live.get("pooled", []) if float(r["threshold_bps"]) == PRIMARY_THRESHOLD_BPS),
+        None,
+    )
+
+
+def live_cell(row: Mapping[str, Any] | None, lat: int | str) -> Mapping[str, Any]:
+    cell: Mapping[str, Any] = (row or {}).get("anchored_edge_by_latency", {}).get(str(lat), {})
+    return cell
+
+
+def edge_band(cell: Mapping[str, Any]) -> str:
+    """``+1.23 ± 0.40`` (mean ± 2 move-clustered SE, cents)."""
+    mean, se = cell.get("mean_c"), cell.get("se_c")
+    if mean is None:
+        return "n/a"
+    return f"{mean:+.2f}" + (f" ± {2 * se:.2f}" if se is not None else "")
+
+
+def live_markdown(live: Mapping[str, Any]) -> list[str]:
+    """Condensed real-market section (full by-series tables live in reports/live_study)."""
+    win = live.get("window", {})
+    ref = live.get("reference", {})
+    con = live.get("contracts", {})
+    lats = [str(x) for x in live.get("config", {}).get("latencies_ms", [0, 100, 250, 500, 1000])]
+    dec = live.get("decision", {})
+    by_series = ", ".join(
+        f"{k} {_n(v)}" for k, v in (con.get("quote_updates_by_series") or {}).items()
+    )
+    moves = " / ".join(_n(v) for v in (live.get("moves_by_threshold") or {}).values())
+    out = ["## Real-market check: live Kalshi order books", ""]
+    out.append(
+        f"* Window {win.get('start')} to {win.get('end')} ({_f(win.get('hours'), 2)} h): "
+        f"Kalshi authenticated WebSocket books for {_n(con.get('with_quotes'))} of "
+        f"{_n(con.get('above_strike'))} BTC above-strike contracts (top-of-book changes: "
+        f"{by_series or 'n/a'}), Coinbase BTC-USD ticker ({_n(ref.get('updates'))} updates), "
+        f"{_n(live.get('raw_messages'))} raw messages in all."
+    )
+    dvol = ref.get("dvol_mean")
+    out.append(
+        "* Volatility input: "
+        + (
+            f"Deribit DVOL, mean {_f(100 * dvol, 0)}% ({_n(ref.get('dvol_points'))} minutes)"
+            if dvol is not None
+            else "realised volatility (DVOL unavailable)"
+        )
+        + f"; realised over the window {_f(100 * (ref.get('realized_vol') or math.nan), 0)}%."
+    )
+    out.append(f"* Coinbase moves of at least 3 / 5 / 10 bps within 1 s (5 s cooldown): {moves}.")
+    out.append(
+        "* Method: for every move and every contract whose fair value it shifts by at least 1¢ "
+        "(fair 10–90¢, 90 s to 6 h before close), take the quote a taker would hit as observed "
+        "L ms after the move (receive time on this machine), value it at Kalshi's own mid 1 s "
+        "before the move plus the model's change in fair value, and subtract the price and the "
+        "Kalshi taker fee (10 contracts, rounded up per order)."
+    )
+    out.append("")
+    rows = []
+    for r in live.get("pooled", []):
+        lt = r["lifetime_ms"]
+        rows.append(
+            [
+                f"{r['threshold_bps']:g}",
+                _n(r["samples"]),
+                _n(r["moves"]),
+                f"{_f(lt.get('p25'), 0)} / {_f(lt.get('median'), 0)} / {_f(lt.get('p75'), 0)}",
+                _f(lt.get("share_beyond_horizon"), 2),
+                *(edge_band(live_cell(r, x)) for x in lats),
+            ]
+        )
+    out.append(
+        _table(
+            [
+                "move ≥ bps",
+                "samples",
+                "moves",
+                "stale quote life p25 / median / p75 ms",
+                "alive at 30 s",
+                *(f"{x} ms" for x in lats),
+            ],
+            rows,
+        )
+    )
+    out.append("")
+    out.append(
+        "Latency cells: mean net ¢ per contract after the fee ± 2 standard errors clustered by "
+        "move, all series pooled."
+    )
+    out.append("")
+    b, babs = live.get("baseline_anchored", {}), live.get("baseline", {})
+    out.append(
+        f"* No-news baseline: the same valuation at fixed 10 s times nets "
+        f"{_f(b.get('mean_c'))}¢ (positive {_f(100 * (b.get('share_positive') or 0), 0)}% of "
+        "the time), the cost of crossing half the spread plus the fee without a signal."
+    )
+    out.append(
+        f"* Valued at the model price alone (no market anchor) the baseline is "
+        f"{_f(babs.get('mean_c'))}¢, positive {_f(100 * (babs.get('share_positive') or 0), 0)}% "
+        "of the time: level disagreement between model and market, not latency edge."
+    )
+    for r in live.get("lead_lag", []):
+        o = r["result"]
+        out.append(
+            f"* Lead-lag {r['contract'].split(':')[-1]} ({_n(r['updates'])} mid changes): "
+            f"Coinbase leads by {o.get('best_positive_lag_ms')} ms, p {_f(o.get('p_value'), 3)}, "
+            f"ΔOOS R² {_f(o.get('incremental_oos_r2'), 3)}, economic gate "
+            f"{'passed' if o.get('qualifies') else 'failed'}."
+        )
+    reasons = dec.get("reasons", [])
+    out.append(
+        f"* Decision `{dec.get('decision')}`: {_tidy(reasons[0]) if reasons else 'n/a'}. "
+        f"Rule fixed before the run: {dec.get('rule')}"
+    )
+    out.append("* By-series tables and the model-absolute view: `reports/live_study/summary.md`.")
+    out.append("")
+    return out
+
+
+def decision_summary(
+    result: Mapping[str, Any], live: Mapping[str, Any] | None = None
+) -> dict[str, Any]:
     bases = result.get("base_cases", [])
-    return {
-        "real_market_decision": result.get("real_market_decision", "COLLECT_MORE_DATA"),
+    dec = (live or {}).get("decision") or {}
+    out: dict[str, Any] = {
+        "real_market_decision": dec.get(
+            "decision", result.get("real_market_decision", "COLLECT_MORE_DATA")
+        ),
         "synthetic_decisions": {b["label"]: b["decision"] for b in bases},
         "synthetic_reasons": {b["label"]: b["decision_reasons"] for b in bases},
         "manifest": {
@@ -151,9 +282,14 @@ def decision_summary(result: Mapping[str, Any]) -> dict[str, Any]:
             for k in ("experiment_id", "git_commit", "config_hash", "dataset_hash", "seed")
         },
     }
+    if dec:
+        out["real_market_reasons"] = dec.get("reasons", [])
+        out["real_market_rule"] = dec.get("rule")
+        out["real_market_window"] = (live or {}).get("window")
+    return out
 
 
-def render_markdown(result: Mapping[str, Any]) -> str:
+def render_markdown(result: Mapping[str, Any], live: Mapping[str, Any] | None = None) -> str:
     man = result.get("manifest", {})
     plan = result.get("plan", {})
     bases = result.get("base_cases", [])
@@ -180,13 +316,23 @@ def render_markdown(result: Mapping[str, Any]) -> str:
     w("")
     w("## Decision")
     w("")
-    w(
-        f"* **Real markets (Kalshi / Polymarket BTC contracts): "
-        f"`{result.get('real_market_decision', 'COLLECT_MORE_DATA')}`.** No real venue data could "
-        "be collected from this environment (market-data hosts are blocked by its network "
-        "policy), so no real-market claim is made. The platform is ready to collect and "
-        "evaluate as soon as access exists (see *Next steps*)."
-    )
+    live_dec = (live or {}).get("decision") or {}
+    if live_dec:
+        reasons = live_dec.get("reasons", [])
+        w(
+            f"* **Real markets (Kalshi BTC order books, "
+            f"{_f((live or {}).get('window', {}).get('hours'), 1)} h live): "
+            f"`{live_dec.get('decision')}`** for the stale-quote taker: "
+            f"{_tidy(reasons[0]) if reasons else 'n/a'}. See *Real-market check* below."
+        )
+    else:
+        w(
+            f"* **Real markets (Kalshi / Polymarket BTC contracts): "
+            f"`{result.get('real_market_decision', 'COLLECT_MORE_DATA')}`.** No real venue data "
+            "could be collected from this environment (market-data hosts are blocked by its "
+            "network policy), so no real-market claim is made. The platform is ready to collect "
+            "and evaluate as soon as access exists (see *Next steps*)."
+        )
     for b in bases:
         w(
             f"* Synthetic base case `{b['label']}`: **`{b['decision']}`** — "
@@ -202,6 +348,8 @@ def render_markdown(result: Mapping[str, Any]) -> str:
     )
     w("")
 
+    if live:
+        lines += live_markdown(live)
     w("## 1. Data, instruments and exclusions")
     w("")
     if kal:
@@ -573,9 +721,33 @@ def render_markdown(result: Mapping[str, Any]) -> str:
 
     w("## 12. Known limitations and unresolved issues")
     w("")
+    hours = _f((live or {}).get("window", {}).get("hours"), 1)
+    real_data = (
+        f"Real venue data: one {hours} h window of Kalshi BTC books and Coinbase BTC-USD (see "
+        "*Real-market check*). One window is one volatility regime and one set of makers; the "
+        "model-world numbers in this report bound what is plausible, they do not estimate "
+        "real P&L."
+        if live
+        else "No real venue data was examined (network policy). All profitability numbers are "
+        "model-world results; they bound what is plausible, they do not estimate real P&L."
+    )
+    kalshi_feed = (
+        "Kalshi WebSocket data was collected with API credentials on this machine's network "
+        "path; a co-located competitor sees and acts on moves sooner than the receive-time "
+        "timeline used here."
+        if live
+        else "Kalshi WebSocket market data requires API credentials; without them the collector "
+        "falls back to REST polling, which cannot measure sub-second lead-lag."
+    )
+    parsers = (
+        "Kalshi WebSocket and Coinbase parsers have run on live payloads; Polymarket, Binance "
+        "and Deribit parsers are still unverified against live traffic."
+        if live
+        else "Parsers were written from documented schemas without live payloads; schema drift "
+        "is quarantined, not silently accepted, and must be checked on first live collection."
+    )
     for item in (
-        "No real venue data was examined (network policy). All profitability numbers are "
-        "model-world results; they bound what is plausible, they do not estimate real P&L.",
+        real_data,
         "Synthetic makers re-quote from a lagged view with one-tick spreads and fixed depth "
         "distributions; real quoting (inventory skew, widening into events, cancels) differs.",
         "Competition is modelled as one arbitrageur class with a single latency and threshold.",
@@ -584,43 +756,60 @@ def render_markdown(result: Mapping[str, Any]) -> str:
         "Fee formulas reflect official documentation as of 2026-10 (Kalshi 0.07·C·P·(1−P) "
         "rounded up per order; Polymarket crypto 0.07·C·p·(1−p)); maker rebates are not "
         "credited; verify per-series values at runtime.",
-        "Kalshi WebSocket market data requires API credentials; without them the collector "
-        "falls back to REST polling, which cannot measure sub-second lead-lag.",
+        kalshi_feed,
         "Cross-venue BTC contracts settle on different references (Kalshi BRTI 60 s average vs "
         "Polymarket Binance BTCUSDT candles or Chainlink TWAP): they are basis trades, never "
         "riskless equivalents; the mapping registry rejects them as equivalent.",
-        "Parsers were written from documented schemas without live payloads; schema drift is "
-        "quarantined, not silently accepted, and must be checked on first live collection.",
+        parsers,
     ):
         w(f"* {item}")
     w("")
     w("## 13. Next steps to reach a real-market decision")
     w("")
+    steps_live = (
+        "Extend the live capture to >= 14 days (`scripts/live_study.py collect`) across "
+        "volatility regimes, US and Asian hours and expiry days, then re-run "
+        "`scripts/live_study.py analyze`; one window is not a sample of regimes.",
+        "Add Polymarket BTC markets and Binance / Deribit reference feeds to the same capture "
+        "to test the cross-venue and options-led signals on real books.",
+        "Only if an edge cell stays positive on the long sample: approve mappings, build a "
+        "dataset (`cma dataset build`), run `cma stress` and `cma leadlag`, and require every "
+        "promotion gate before forward paper trading.",
+        "Look beyond latency taking: passive quoting, which pays far lower fees than taking, "
+        "and near-expiry contracts where delta is high.",
+    )
     for item in (
-        "Allow the market-data hosts in the environment network policy (Kalshi external-api, "
-        "Polymarket clob/gamma/data-api, Coinbase exchange, Deribit) and add Kalshi API "
-        "credentials via environment variables (never config files).",
-        "`cma collect --duration 1209600` for ≥ 14 days to capture synchronized books "
-        "(`KXBTCD`, Polymarket BTC markets, Coinbase BTC-USD, Deribit DVOL/options).",
-        "Review and approve mappings (`config/mappings/registry`), build a dataset "
-        "(`cma dataset build`), run `cma stress` and `cma leadlag`; publish only manifests "
-        "that pass `validate_publication`.",
-        "Measure the real maker reaction-lag distribution and competitor fill speed: the "
-        "frontier above says whether any latency budget can be profitable before money is "
-        "spent on infrastructure.",
+        steps_live
+        if live
+        else (
+            "Allow the market-data hosts in the environment network policy (Kalshi external-api, "
+            "Polymarket clob/gamma/data-api, Coinbase exchange, Deribit) and add Kalshi API "
+            "credentials via environment variables (never config files).",
+            "`cma collect --duration 1209600` for ≥ 14 days to capture synchronized books "
+            "(`KXBTCD`, Polymarket BTC markets, Coinbase BTC-USD, Deribit DVOL/options).",
+            "Review and approve mappings (`config/mappings/registry`), build a dataset "
+            "(`cma dataset build`), run `cma stress` and `cma leadlag`; publish only manifests "
+            "that pass `validate_publication`.",
+            "Measure the real maker reaction-lag distribution and competitor fill speed: the "
+            "frontier above says whether any latency budget can be profitable before money is "
+            "spent on infrastructure.",
+        )
     ):
         w(f"* {item}")
     w("")
     return "\n".join(lines) + "\n"
 
 
-def write_reports(result: Mapping[str, Any], out_dir: Path) -> list[Path]:
+def write_reports(
+    result: Mapping[str, Any], out_dir: Path, *, live: Mapping[str, Any] | None = None
+) -> list[Path]:
+    """DECISION_REPORT.md, decision.json and the HTML page; ``live`` is a live-study summary."""
     out_dir.mkdir(parents=True, exist_ok=True)
     md = out_dir / "DECISION_REPORT.md"
-    md.write_text(render_markdown(result), encoding="utf-8")
+    md.write_text(render_markdown(result, live), encoding="utf-8")
     js = out_dir / "decision.json"
-    js.write_text(json.dumps(decision_summary(result), indent=1, default=str) + "\n")
+    js.write_text(json.dumps(decision_summary(result, live), indent=1, default=str) + "\n")
     from cma.research.report_html import write_html
 
-    page = write_html(result, out_dir)
+    page = write_html(result, out_dir, live=live)
     return [md, js, page]

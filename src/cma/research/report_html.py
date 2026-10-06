@@ -14,7 +14,13 @@ from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import Any
 
-from cma.research.report import positive_maker_lags, risk_overlay_sentence
+from cma.research.report import (
+    edge_band,
+    live_cell,
+    live_primary,
+    positive_maker_lags,
+    risk_overlay_sentence,
+)
 
 LAT = (0, 100, 250, 500, 1000, 2000, 5000)
 EVIDENCE = (
@@ -134,6 +140,7 @@ svg .s2{stroke:var(--s2);fill:none;stroke-width:2;stroke-linejoin:round;stroke-l
 svg .d1{fill:var(--s1);stroke:var(--surface);stroke-width:2}
 svg .d2{fill:var(--s2);stroke:var(--surface);stroke-width:2}
 svg .hit{fill:transparent;cursor:crosshair}
+svg .ci{stroke:var(--s1);stroke-width:1.5;stroke-linecap:round;opacity:.6}
 .tablebox{overflow-x:auto;border:1px solid var(--rule);border-radius:6px;background:var(--sheet)}
 table{border-collapse:collapse;width:100%;font-size:13px}
 th,td{padding:7px 10px;text-align:right;border-bottom:1px solid var(--rule);white-space:nowrap}
@@ -454,6 +461,277 @@ def _frontier_section(frontier: Sequence[Mapping[str, Any]]) -> str:
 </section>"""
 
 
+def _band(cell: Mapping[str, Any]) -> str:
+    return edge_band(cell).replace("-", "−")
+
+
+def _live_panel_svg(
+    row: Mapping[str, Any], lats: Sequence[int], y_lo: float, y_hi: float, title: str
+) -> str:
+    """Mean market-anchored edge by latency with ±2 SE whiskers (one move threshold)."""
+    w, h = 300, 190
+    left, right, top, bottom = 38, 14, 10, 30
+    pw, ph = w - left - right, h - top - bottom
+    ticks = _nice_ticks(y_lo, y_hi, 6)
+    y_min, y_max = ticks[0], ticks[-1]
+
+    def x(i: int) -> float:
+        return left + pw * i / max(len(lats) - 1, 1)
+
+    def y(v: float) -> float:
+        return top + ph * (1 - (v - y_min) / (y_max - y_min))
+
+    parts = [f'<svg viewBox="0 0 {w} {h}" role="img" aria-label="{html.escape(title)}">']
+    for t in ticks:
+        cls = "zero" if abs(t) < 1e-12 else "gridline"
+        parts.append(
+            f'<line class="{cls}" x1="{left}" x2="{w - right}" y1="{y(t):.1f}" y2="{y(t):.1f}"/>'
+        )
+        parts.append(
+            f'<text x="{left - 6}" y="{y(t) + 3:.1f}" text-anchor="end">'
+            f"{_fmt(t, 1 if abs(t) < 10 else 0)}</text>"
+        )
+    for i, lat in enumerate(lats):
+        label = f"{lat // 1000}s" if lat >= 1000 else f"{lat}"
+        parts.append(
+            f'<text x="{x(i):.1f}" y="{h - bottom + 14}" text-anchor="middle">{label}</text>'
+        )
+    parts.append(
+        f'<text x="{left + pw / 2:.1f}" y="{h - 4}" text-anchor="middle">'
+        f"our latency after the move (ms)</text>"
+    )
+    pts = [
+        (i, lat, cell, m)
+        for i, lat in enumerate(lats)
+        if (m := _num((cell := live_cell(row, lat)).get("mean_c"))) is not None
+    ]
+    for i, _, cell, m in pts:
+        se = _num(cell.get("se_c"))
+        if se is not None:
+            parts.append(
+                f'<line class="ci" x1="{x(i):.1f}" x2="{x(i):.1f}" '
+                f'y1="{y(m - 2 * se):.1f}" y2="{y(m + 2 * se):.1f}"/>'
+            )
+    if pts:
+        path = " ".join(
+            f"{'M' if j == 0 else 'L'}{x(i):.1f},{y(m):.1f}" for j, (i, _, _, m) in enumerate(pts)
+        )
+        parts.append(f'<path class="s1" d="{path}"/>')
+    for i, lat, cell, m in pts:
+        share = _num(cell.get("share_positive"))
+        tipt = (
+            f"{title}<br>latency <b>{lat} ms</b><br>net <b>{_fmt(m, 2, True)}¢</b>/contract"
+            f" ({html.escape(_band(cell))} at 2 SE)<br>positive in "
+            f"<b>{_fmt(100 * share if share is not None else None, 0)}%</b> of "
+            f"{_fmt(cell.get('n'), 0)} quotes on {_fmt(cell.get('moves'), 0)} moves"
+        )
+        parts.append(f'<circle class="d1" cx="{x(i):.1f}" cy="{y(m):.1f}" r="4"/>')
+        parts.append(
+            f'<circle class="hit" cx="{x(i):.1f}" cy="{y(m):.1f}" r="11" tabindex="0" '
+            f'data-tip="{html.escape(tipt)}"/>'
+        )
+    parts.append("</svg>")
+    return "".join(parts)
+
+
+def _took(v: float | None, lat: int, *, first: bool) -> str:
+    """'lost 1.23¢ per contract at 100 ms' / 'netted 0.42¢ at 250 ms' / 'broke even at ...'."""
+    if v is None:
+        return f"had no quote to take at {lat} ms"
+    if round(v, 2) == 0:
+        return f"broke even at {lat} ms"
+    return (
+        f"{'netted' if v > 0 else 'lost'} {abs(v):.2f}¢{' per contract' if first else ''} "
+        f"at {lat} ms"
+    )
+
+
+def live_lede(live: Mapping[str, Any]) -> str:
+    """One data-driven sentence on the live window (opens the page when present)."""
+    dec = (live.get("decision") or {}).get("decision", "COLLECT_MORE_DATA")
+    hours = _num(live.get("window", {}).get("hours")) or 0.0
+    prim = live_primary(live)
+    c100, c250 = live_cell(prim, 100), live_cell(prim, 250)
+    m100, m250 = _num(c100.get("mean_c")), _num(c250.get("mean_c"))
+    if prim is None or m100 is None:
+        reasons = (live.get("decision") or {}).get("reasons") or ["no samples"]
+        return f"Not yet measurable on real Kalshi books ({reasons[0]})."
+    med = _num(prim["lifetime_ms"].get("median"))
+    opener = (
+        "Not on real Kalshi books."
+        if dec == "REJECT"
+        else ("Not proven on real Kalshi books." if m100 > 0 or (m250 or 0) > 0 else "Not so far.")
+    )
+    same = (m100 > 0) == ((m250 or 0) > 0)
+    body = (
+        f" Over {hours:.1f} hours of live order books, the quote a taker would hit after a "
+        f"≥ 5 bps BTC move lasted a median {_fmt(med, 0)} ms, and taking it "
+        f"{_took(m100, 100, first=True)} {'and' if same else 'but'} "
+        f"{_took(m250, 250, first=False)} after the fee"
+    )
+    se = _num(c100.get("se_c"))
+    if dec == "REJECT":
+        return f"{opener}{body}."
+    band = f" (±{2 * se:.2f}¢ at two standard errors)" if se is not None else ""
+    return (
+        f"{opener}{body}{band}; one {hours:.0f}-hour window cannot settle it, so the call is to "
+        "collect more data."
+    )
+
+
+def live_verdict(live: Mapping[str, Any]) -> tuple[str, str, str]:
+    dec = live.get("decision") or {}
+    hours = _num(live.get("window", {}).get("hours")) or 0.0
+    prim = live_primary(live)
+    c100, c250 = live_cell(prim, 100), live_cell(prim, 250)
+    why = (
+        f"after ≥ 5 bps moves: {_band(c100)}¢ at 100 ms, {_band(c250)}¢ at 250 ms "
+        "per contract (±2 SE)"
+        if prim is not None and c100.get("mean_c") is not None
+        else (dec.get("reasons") or ["no samples"])[0]
+    )
+    return (
+        f"Real Kalshi books, {hours:.1f} h live",
+        str(dec.get("decision", "COLLECT_MORE_DATA")),
+        why,
+    )
+
+
+def _live_section(live: Mapping[str, Any]) -> str:
+    win, ref, con = live.get("window", {}), live.get("reference", {}), live.get("contracts", {})
+    lats = [int(x) for x in live.get("config", {}).get("latencies_ms", [0, 100, 250, 500, 1000])]
+    pooled = live.get("pooled", [])
+    prim = live_primary(live)
+    lt = (prim or {}).get("lifetime_ms", {})
+    c100, c250 = live_cell(prim, 100), live_cell(prim, 250)
+    base = live.get("baseline_anchored", {})
+    base_abs = live.get("baseline", {})
+    beyond = _num(lt.get("share_beyond_horizon"))
+
+    def tile_edge(cell: Mapping[str, Any], label: str) -> str:
+        se = _num(cell.get("se_c"))
+        return (
+            f'<div class="tile"><span class="label">{label}</span>'
+            f'<span class="value {_cls(cell.get("mean_c"))}">'
+            f"{_fmt(cell.get('mean_c'), 2, True)}¢</span>"
+            f'<span class="note">per contract after the fee · ±{_fmt(2 * se if se else None, 2)}¢'
+            f" (2 SE, clustered by move) · {_fmt(cell.get('n'), 0)} quotes on "
+            f"{_fmt(cell.get('moves'), 0)} moves</span></div>"
+        )
+
+    tiles = (
+        '<div class="tiles">'
+        '<div class="tile"><span class="label">Median life of a stale quote</span>'
+        f'<span class="value">{_fmt(lt.get("median"), 0)} ms</span>'
+        f'<span class="note">after ≥ 5 bps moves · p25–p75 {_fmt(lt.get("p25"), 0)}–'
+        f"{_fmt(lt.get('p75'), 0)} ms · "
+        f"{_fmt(100 * beyond if beyond is not None else None, 0)}% still there at 30 s</span>"
+        "</div>"
+        + tile_edge(c100, "Taking it 100 ms after the move")
+        + tile_edge(c250, "Taking it 250 ms after the move")
+        + '<div class="tile"><span class="label">Trading without news</span>'
+        f'<span class="value {_cls(base.get("mean_c"))}">{_fmt(base.get("mean_c"), 2, True)}¢'
+        "</span>"
+        '<span class="note">same valuation at fixed 10 s times: half the spread plus the fee'
+        "</span></div></div>"
+    )
+    vals = [0.0]
+    for r in pooled:
+        for lat in lats:
+            cell = live_cell(r, lat)
+            m, se = _num(cell.get("mean_c")), _num(cell.get("se_c")) or 0.0
+            if m is not None:
+                vals += [m - 2 * se, m + 2 * se]
+    lo, hi = min(vals), max(vals)
+    pad = 0.04 * (hi - lo or 1.0)
+    panels = "".join(
+        f'<div class="panel"><h3>Moves ≥ {r["threshold_bps"]:g} bps in 1 s</h3>'
+        f'<div class="sub">{_fmt(r["samples"], 0)} quotes on {_fmt(r["moves"], 0)} moves · '
+        f"median life {_fmt(r['lifetime_ms'].get('median'), 0)} ms</div>"
+        f"{_live_panel_svg(r, lats, lo - pad, hi + pad, f'moves ≥ {r["threshold_bps"]:g} bps')}"
+        "</div>"
+        for r in pooled
+    )
+    head = "".join(f"<th>{lat} ms</th>" for lat in lats)
+
+    def edge_row(first: str, r: Mapping[str, Any]) -> str:
+        life = r["lifetime_ms"]
+        return (
+            f"<tr><td>{first}</td><td>{_fmt(r['samples'], 0)}</td><td>{_fmt(r['moves'], 0)}</td>"
+            f"<td>{_fmt(life.get('p25'), 0)} / {_fmt(life.get('median'), 0)} / "
+            f"{_fmt(life.get('p75'), 0)}</td>"
+            + "".join(
+                f'<td class="{_cls(live_cell(r, lat).get("mean_c"))}">'
+                f"{html.escape(_band(live_cell(r, lat)))}</td>"
+                for lat in lats
+            )
+            + "</tr>"
+        )
+
+    pooled_rows = "".join(edge_row(f"≥ {r['threshold_bps']:g} bps", r) for r in pooled)
+    series_rows = "".join(
+        edge_row(f"≥ {r['threshold_bps']:g} bps · {html.escape(str(r['series']))}", r)
+        for r in live.get("summary", [])
+    )
+    table_head = (
+        "<thead><tr><th>moves</th><th>quotes</th><th>moves</th>"
+        f"<th>life p25 / median / p75 ms</th>{head}</tr></thead>"
+    )
+    ll_rows = "".join(
+        f"<tr><td>{html.escape(r['contract'].split(':')[-1])}</td>"
+        f"<td>{_fmt(r['updates'], 0)}</td>"
+        f"<td>{html.escape(str(r['result'].get('best_positive_lag_ms')))}</td>"
+        f"<td>{_fmt(r['result'].get('p_value'), 3)}</td>"
+        f"<td>{_fmt(r['result'].get('incremental_oos_r2'), 3)}</td>"
+        f"<td>{'yes' if r['result'].get('qualifies') else 'no'}</td></tr>"
+        for r in live.get("lead_lag", [])
+    )
+    ll_html = (
+        '<h3>Lead-lag: Coinbase mid to contract mid</h3><div class="tablebox"><table><thead><tr>'
+        "<th>contract</th><th>mid changes</th><th>lag ms</th><th>p</th><th>ΔOOS R²</th>"
+        f"<th>clears fees</th></tr></thead><tbody>{ll_rows}</tbody></table></div>"
+        if ll_rows
+        else ""
+    )
+    dec = live.get("decision") or {}
+    dvol = _num(ref.get("dvol_mean"))
+    by_series = ", ".join(
+        f"{html.escape(str(k))} {_fmt(v, 0)}"
+        for k, v in (con.get("quote_updates_by_series") or {}).items()
+    )
+    return f"""
+<section id="live">
+  <h2>Real Kalshi books, {_fmt(win.get("hours"), 1)} hours live</h2>
+  <p class="memo">Kalshi's authenticated WebSocket order books for
+  {_fmt(con.get("with_quotes"), 0)} BTC above-strike contracts (top-of-book changes:
+  {by_series or "n/a"}) recorded next to the Coinbase BTC-USD ticker
+  ({_fmt(ref.get("updates"), 0)} updates) from {html.escape(str(win.get("start", ""))[:16])} to
+  {html.escape(str(win.get("end", ""))[11:16])} UTC, {_fmt(live.get("raw_messages"), 0)} raw
+  messages in all. For every Coinbase move and every contract whose fair value it shifts by at
+  least 1¢, the quote a taker would hit is valued at Kalshi's own mid one second before the move
+  plus the model's change in fair value (volatility from
+  {"Deribit DVOL, " + _fmt(100 * dvol, 0) + "%" if dvol is not None else "realised volatility"}),
+  minus the price and the taker fee. Times are receive times on this machine.</p>
+  {tiles}
+  <div class="legend" aria-hidden="true">
+    <span class="key"><i style="background:var(--s1)"></i>mean net ¢ per contract</span>
+    <span class="key"><i style="background:var(--s1);opacity:.6;width:3px;height:14px"></i>±2 standard errors, clustered by move</span>
+  </div>
+  <div class="panels wide">{panels}</div>
+  <details><summary>Table view: net ¢ per contract after the fee, ±2 SE (all series)</summary>
+  <div class="tablebox"><table>{table_head}<tbody>{pooled_rows}</tbody></table></div></details>
+  <details><summary>By series</summary>
+  <div class="tablebox"><table>{table_head}<tbody>{series_rows}</tbody></table></div></details>
+  <p class="memo">Without news the same valuation nets {_fmt(base.get("mean_c"), 2, True)}¢
+  (positive {_fmt(100 * (_num(base.get("share_positive")) or 0), 0)}% of the time). Valued at
+  the model price alone the baseline is {_fmt(base_abs.get("mean_c"), 2, True)}¢, which is model
+  and basis disagreement with the market rather than speed, hence the market anchor.</p>
+  {ll_html}
+  <p class="memo"><b>{html.escape(str(dec.get("decision", "")).replace("_", " "))}</b> by the rule
+  fixed before the run: {html.escape(str(dec.get("rule", "")).replace(">=", "≥"))}</p>
+</section>"""
+
+
 def _grid_table(
     base: Mapping[str, Any], field: str, nd: int = 0, sign: bool = True, prefix: str = ""
 ) -> str:
@@ -490,7 +768,7 @@ def _ex_ante_table(base: Mapping[str, Any]) -> str:
     )
 
 
-def render_fragment(result: Mapping[str, Any]) -> str:
+def render_fragment(result: Mapping[str, Any], live: Mapping[str, Any] | None = None) -> str:
     man = result.get("manifest", {})
     plan = result.get("plan", {})
     bases = result.get("base_cases", [])
@@ -533,8 +811,10 @@ def render_fragment(result: Mapping[str, Any]) -> str:
     rival = best_buyable(350.0, 120.0)  # reported maker speed, 120 ms arbitrageur
     ex = (kal.get("ex_ante") or {}).get(f"base@{crit}", {}) if kal else {}
     tail = (
-        " No real venue data could be collected here, so the real-market call is to collect "
-        "data first."
+        ""
+        if live
+        else " No real venue data could be collected here, so the real-market call is to "
+        "collect data first."
     )
     if pos_comp and alone is not None and rival is not None and rival[0] < 0:
         if alone[0] < 0:
@@ -564,8 +844,16 @@ def render_fragment(result: Mapping[str, Any]) -> str:
             f"of expected edge per contract at {crit} ms after the 0.07·p(1−p) taker fee.{tail}"
         )
 
+    if live:
+        lede = (
+            f"{live_lede(live)} In a market model calibrated to public evidence, a lead-lag "
+            "taker clears the 0.07·p(1−p) taker fee reliably only once makers take about "
+            f"{need} or longer to re-quote after a BTC move."
+        )
     verdicts = [
-        (
+        live_verdict(live)
+        if live
+        else (
             "Real markets (Kalshi, Polymarket)",
             result.get("real_market_decision", "COLLECT_MORE_DATA"),
             "no venue data reachable from this environment; collection plan below",
@@ -731,6 +1019,34 @@ def render_fragment(result: Mapping[str, Any]) -> str:
   taker fees.</p>
 </section>"""
 
+    if live:
+        med = _num((live_primary(live) or {}).get("lifetime_ms", {}).get("median"))
+        next_items = (
+            f"<li>Real makers left a stale quote up for a median {_fmt(med, 0)} ms after a "
+            f"≥ 5 bps move in this window. The model needs about {html.escape(need)} or longer "
+            "for edge with a 120 ms competitor present; a longer capture shows whether slower "
+            "periods (news, thin hours, expiry days) exist.</li>"
+            "<li>Extend the capture to ≥ 14 days with <code>scripts/live_study.py collect</code> "
+            "across volatility regimes, and add Polymarket and Binance / Deribit feeds. Promote "
+            "only through the out-of-sample and promotion gates, never from one window.</li>"
+        )
+        hours = _num(live.get("window", {}).get("hours")) or 0.0
+        live_foot = (
+            f" Live numbers come from one {hours:.1f} h window and are receive-time estimates, "
+            "not P&amp;L."
+        )
+    else:
+        next_items = (
+            "<li>Measure the real maker reaction-lag distribution and competitor fill speed on "
+            "Kalshi BTC ladders from collected books. In the model, edge appears only once "
+            f"makers take about {html.escape(need)} or longer, with a 120 ms competitor "
+            "present.</li><li>Collect ≥ 14 days with <code>cma collect</code> once the venue "
+            "hosts are reachable, approve mappings, then run <code>cma stress</code> and "
+            "<code>cma leadlag</code>. Publication is refused unless every latency (0–5 s) and "
+            "≥ 2 adverse cost scenarios are present.</li>"
+        )
+        live_foot = ""
+
     ev_html = "".join(
         f'<div class="ev"><span class="cred">{html.escape(c)}</span><div><p>{html.escape(t)}</p>'
         f'<p class="src">{html.escape(s)}</p></div></div>'
@@ -753,6 +1069,7 @@ def render_fragment(result: Mapping[str, Any]) -> str:
   <div class="verdicts">{verdict_html}</div>
   {tiles}
 </section>
+{_live_section(live) if live else ""}
 {_frontier_section(frontier)}
 {_attribution_section(result, crit)}
 {base_html}
@@ -766,13 +1083,7 @@ def render_fragment(result: Mapping[str, Any]) -> str:
 <section id="next">
   <h2>What would change the answer</h2>
   <ul class="plain memo">
-    <li>Measure the real maker reaction-lag distribution and competitor fill speed on
-    Kalshi BTC ladders from collected books. In the model, edge appears only once makers
-    take about {html.escape(need)} or longer, with a 120 ms competitor present.</li>
-    <li>Collect ≥ 14 days with <code>cma collect</code> once the venue hosts are reachable,
-    approve mappings, then run <code>cma stress</code> and <code>cma leadlag</code>.
-    Publication is refused unless every latency (0–5 s) and ≥ 2 adverse cost scenarios
-    are present.</li>
+    {next_items}
     <li>Look beyond pure latency taking: passive quoting, which pays far lower fees than
     taking on both venues, and near-expiry contracts where delta is high, are the remaining
     places the economics can work.</li>
@@ -780,7 +1091,7 @@ def render_fragment(result: Mapping[str, Any]) -> str:
   <p class="memo" style="color:var(--ink-3);font-size:13px">git {html.escape(str(man.get("git_commit", ""))[:12])} ·
   config {html.escape(str(man.get("config_hash", ""))[:12])} · dataset
   {html.escape(str(man.get("dataset_hash", ""))[:12])} · seed {html.escape(str(man.get("seed", "")))}.
-  Synthetic results bound what is plausible; they are not estimates of real P&amp;L.</p>
+  Synthetic results bound what is plausible; they are not estimates of real P&amp;L.{live_foot}</p>
 </section>
 </div>
 <div class="tip" id="tip" hidden></div>
@@ -788,9 +1099,15 @@ def render_fragment(result: Mapping[str, Any]) -> str:
 """
 
 
-def write_html(result: Mapping[str, Any], out_dir: Path, *, fragment: bool = False) -> Path:
+def write_html(
+    result: Mapping[str, Any],
+    out_dir: Path,
+    *,
+    fragment: bool = False,
+    live: Mapping[str, Any] | None = None,
+) -> Path:
     out_dir.mkdir(parents=True, exist_ok=True)
-    body = render_fragment(result)
+    body = render_fragment(result, live)
     if fragment:
         path = out_dir / "edge_evaluation.fragment.html"
         path.write_text(body, encoding="utf-8")
