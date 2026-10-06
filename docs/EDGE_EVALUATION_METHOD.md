@@ -168,3 +168,36 @@ full history** (only a two-day sample was inspected, for data quality).
 
 `scripts/settlement_study.py analyze --out reports/settlement_study` writes `summary.json`
 and `summary.md`.
+
+## 8. Same-venue consistency: 15-minute markets vs the hourly ladder (`cma.research.ladder_check`)
+
+No model: a pure no-arbitrage check between two Kalshi series that settle on **the same
+number**. At every hour C, the `KXBTC15M` market closing at C (YES when the 60 s BRTI average
+before C is at least its strike K15, the average before C − 15 min) and the `KXBTCD` event
+closing at C (YES on strike K when the same average is above K; strikes on a $100 or $250 grid
+written as `…99.99`) settle on one value. With K_lo < K15 ≤ K_hi the adjacent ladder strikes,
+the payoffs nest: YES(K_hi) ≤ YES(15-minute) ≤ YES(K_lo). Fixed and committed before the
+first run.
+
+1. **Riskless pairs.** Each of these buys two contracts whose payoffs add up to at least $1 in
+   every outcome, so it profits for sure when it costs less than $1 including both taker fees:
+   (a) 15-minute YES at its ask + K_hi NO at 1 − bid(K_hi); (b) 15-minute NO at 1 − its bid +
+   K_lo YES at the ask(K_lo); (c) K_lo YES + K_hi NO (ladder monotonicity). The riskless
+   profit per pair is $1 − cost − the Kalshi taker fee on each leg (100-contract orders).
+2. **Minutes.** The 15-minute market's candles ending 2 to 13 minutes after its open (its
+   first minute starts on an empty book), with both ladder strikes' candles at the same minute
+   ends; every leg needs 0 < bid < ask < 1.
+3. **Opportunity.** An hour counts when some minute shows a positive riskless profit on a
+   pair and the same pair is still positive at the next minute's quotes (a gap that lasts
+   less than a minute is not one a minute-scale trader can take); the profit is measured at
+   that next minute. One opportunity per hour, the first.
+4. **Decision.** `REJECT` when opportunities occur in fewer than 2% of the paired hours or
+   their median riskless profit is below 1¢ per pair. Otherwise `LIVE_SIZE_CHECK`: minute
+   candles carry no depth, so the next step is measuring the size behind those quotes on
+   live books (the collector already records them), not trading.
+5. **Descriptive.** Pre-fee crossing rates for each pair, the largest after-fee gap per hour,
+   how often the 15-minute mid lies outside the ladder's [mid(K_hi), mid(K_lo)] band, and
+   realised P&L of opportunities where the settlement value is known.
+
+`scripts/settlement_study.py fetch-ladder` downloads the two bracketing ladder strikes per
+hour (last 15 minutes) from the already-fetched 15-minute markets; `ladder` runs the check.
