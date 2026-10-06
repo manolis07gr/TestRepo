@@ -262,3 +262,81 @@ def test_fetch_all_runs_every_stage_without_credentials(tmp_path: Path) -> None:
 
 def test_backoff_policy_is_importable_for_callers() -> None:
     assert BackoffPolicy().max_attempts == 8
+
+
+def test_ladder_event_ticker_uses_new_york_date_and_hour() -> None:
+    def ts(iso: str) -> int:
+        return int(datetime.fromisoformat(iso).replace(tzinfo=UTC).timestamp())
+
+    assert sd.ladder_event_ticker(ts("2026-06-02T01:00:00")) == "KXBTCD-26JUN0121"  # EDT
+    assert sd.ladder_event_ticker(ts("2025-12-15T17:00:00")) == "KXBTCD-25DEC1512"  # EST
+
+
+def test_bracket_gives_adjacent_strikes_around_the_15_minute_strike() -> None:
+    assert sd.bracket(85612.34, 100) == (85599.99, 85699.99)
+    assert sd.bracket(85699.99, 100) == (85599.99, 85699.99)  # equal to a strike: lo < k <= hi
+    assert sd.bracket(85700.00, 100) == (85699.99, 85799.99)
+    assert sd.bracket(68871.84, 250) == (68749.99, 68999.99)
+
+
+def test_fetch_ladder_finds_the_events_own_spacing_and_resumes(tmp_path: Path) -> None:
+    def m15(close_ts: int, strike: float) -> sd.SettledMarket:
+        return sd.SettledMarket(
+            f"KXBTC15M-{close_ts}",
+            "E",
+            "KXBTC15M",
+            close_ts - 900,
+            close_ts,
+            "greater_or_equal",
+            strike,
+            None,
+            "yes",
+            None,
+            False,
+        )
+
+    hour = SINCE - SINCE % 3600 + 3600
+    old = m15(hour, 68871.84)  # archived, $250 grid
+    new = m15(hour + 3600, 85612.34)  # live, $100 grid
+    gone = m15(hour + 7200, 70000.50)  # no ladder that hour
+    off_hour = m15(hour + 900, 1.0)  # not on the hour: ignored
+    done = m15(hour + 10800, 1.0)
+    sd.ladder_path(tmp_path).write_text(json.dumps({"close_ts": done.close_ts}) + "\n")
+    existing = {
+        f"/historical/markets/{sd.ladder_event_ticker(old.close_ts)}-T68749.99/candlesticks",
+        f"/historical/markets/{sd.ladder_event_ticker(old.close_ts)}-T68999.99/candlesticks",
+        f"/series/KXBTCD/markets/{sd.ladder_event_ticker(new.close_ts)}-T85599.99/candlesticks",
+        f"/series/KXBTCD/markets/{sd.ladder_event_ticker(new.close_ts)}-T85699.99/candlesticks",
+    }
+    seen: list[str] = []
+
+    def handler(req: httpx.Request) -> httpx.Response:
+        path = req.url.path.removeprefix("/trade-api/v2")
+        seen.append(path)
+        if path in existing:
+            c = {
+                "end_period_ts": int(req.url.params["end_ts"]),
+                "yes_bid": {"close_dollars": "0.40"},
+                "yes_ask": {"close_dollars": "0.42"},
+            }
+            return httpx.Response(200, json={"candlesticks": [c]})
+        return httpx.Response(404, json={"error": {"code": "not_found"}})
+
+    cutoff = hour + 1800  # the first hour is archived, the later ones are live
+    n = _run(
+        handler,
+        lambda http: sd.fetch_ladder(
+            http, [old, new, gone, off_hour, done], data_dir=tmp_path, archive_cutoff_ts=cutoff
+        ),
+    )
+    assert n == 3
+    rows = sd.load_ladder(tmp_path)
+    assert rows[old.close_ts]["spacing"] == 250
+    assert rows[old.close_ts]["lo"]["strike"] == 68749.99
+    assert rows[new.close_ts]["spacing"] == 100
+    assert rows[new.close_ts]["hi"]["ticker"].endswith("-T85699.99")
+    assert rows[gone.close_ts]["status"] == "missing"
+    assert rows[new.close_ts]["hi"]["candles"][0][4] == pytest.approx(0.40)
+    # close to the cutoff both endpoints are tried; the archived hour asked the archive first
+    assert seen[0].startswith("/historical/")
+    assert not any(str(off_hour.close_ts) in p for p in seen)

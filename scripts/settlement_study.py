@@ -2,6 +2,7 @@
 
   python scripts/settlement_study.py fetch --since 2026-01-01          # resumable download
   python scripts/settlement_study.py analyze --out reports/settlement_study
+  python scripts/settlement_study.py fetch-ladder && python scripts/settlement_study.py ladder
 
 ``fetch`` stores settled markets, their 1-minute YES bid/ask candles, Coinbase BTC-USD
 1-minute candles and Deribit DVOL under ``--data`` (git-ignored). Kalshi requests are signed
@@ -20,7 +21,8 @@ import time
 from datetime import UTC, datetime
 from pathlib import Path
 
-from cma.research.settlement_data import fetch_all
+from cma.research import ladder_check
+from cma.research.settlement_data import fetch_all, fetch_ladder_all
 from cma.research.settlement_study import analyze_dir, write_outputs
 
 
@@ -47,10 +49,34 @@ def cmd_fetch(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_fetch_ladder(args: argparse.Namespace) -> int:
+    t0 = time.time()
+    summary = asyncio.run(
+        fetch_ladder_all(
+            data_dir=Path(args.data), kalshi_rate_per_s=args.kalshi_rate, signed=not args.unsigned
+        )
+    )
+    summary["seconds"] = round(time.time() - t0, 1)
+    print(json.dumps(summary))
+    return 0
+
+
 def cmd_analyze(args: argparse.Namespace) -> int:
     t0 = time.time()
     result = analyze_dir(Path(args.data))
     for path in write_outputs(result, Path(args.out)):
+        print(f"wrote {path}")
+    dec = result["decision"]
+    print(f"decision: {dec['decision']} ({time.time() - t0:.0f} s)")
+    for reason in dec["reasons"]:
+        print(f"  {reason}")
+    return 0
+
+
+def cmd_ladder(args: argparse.Namespace) -> int:
+    t0 = time.time()
+    result = ladder_check.analyze_dir(Path(args.data))
+    for path in ladder_check.write_outputs(result, Path(args.out)):
         print(f"wrote {path}")
     dec = result["decision"]
     print(f"decision: {dec['decision']} ({time.time() - t0:.0f} s)")
@@ -72,10 +98,19 @@ def main() -> int:
     f.add_argument("--kalshi-rate", type=float, default=10.0, help="requests per second")
     f.add_argument("--unsigned", action="store_true", help="do not sign Kalshi requests")
     f.set_defaults(func=cmd_fetch)
+    fl = sub.add_parser("fetch-ladder", help="hourly-ladder strikes around each 15-minute strike")
+    fl.add_argument("--data", default="data/settlement")
+    fl.add_argument("--kalshi-rate", type=float, default=10.0, help="requests per second")
+    fl.add_argument("--unsigned", action="store_true", help="do not sign Kalshi requests")
+    fl.set_defaults(func=cmd_fetch_ladder)
     a = sub.add_parser("analyze")
     a.add_argument("--data", default="data/settlement")
     a.add_argument("--out", default="reports/settlement_study")
     a.set_defaults(func=cmd_analyze)
+    lc = sub.add_parser("ladder", help="15-minute vs hourly-ladder consistency check")
+    lc.add_argument("--data", default="data/settlement")
+    lc.add_argument("--out", default="reports/ladder_check")
+    lc.set_defaults(func=cmd_ladder)
     args = p.parse_args()
     return int(args.func(args))
 

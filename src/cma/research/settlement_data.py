@@ -30,6 +30,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlsplit
+from zoneinfo import ZoneInfo
 
 import httpx
 
@@ -468,3 +469,149 @@ async def fetch_all(
             deribit, start_ts=since_ts - 3 * 3600, end_ts=until_ts, data_dir=data_dir
         )
     return summary
+
+
+# ----------------------------------------------------------------------------- hourly ladder
+
+LADDER_SERIES = "KXBTCD"
+LADDER_SPACINGS = (100, 250, 500, 1000)  # $ between strikes; $250 early in 2026, $100 later
+LADDER_WINDOW_S = 15 * 60  # the life of the 15-minute market that closes with the ladder
+NEW_YORK = ZoneInfo("America/New_York")
+
+
+def ladder_path(data_dir: Path) -> Path:
+    return data_dir / f"kalshi_ladder_{LADDER_SERIES}.jsonl"
+
+
+def ladder_event_ticker(close_ts: int) -> str:
+    """``KXBTCD-26JUN0121`` for the hourly event closing at ``close_ts`` (New York date and
+    hour, e.g. 2026-06-02T01:00Z is 21:00 EDT on June 1)."""
+    et = datetime.fromtimestamp(close_ts, NEW_YORK)
+    return f"{LADDER_SERIES}-{et:%y}{et.strftime('%b').upper()}{et:%d%H}"
+
+
+def bracket(strike: float, spacing: int) -> tuple[float, float]:
+    """Adjacent ladder strikes ``(lo, hi)`` with lo < strike <= hi on the ``…99.99`` grid
+    (``hi`` = spacing * n - 0.01 for the smallest such n)."""
+    step = spacing * 100  # cents
+    n_hi = -(-(round(strike * 100) + 1) // step)  # ceil((strike + 0.01) / spacing)
+    hi_cents = n_hi * step - 1
+    return (hi_cents - step) / 100, hi_cents / 100
+
+
+def ladder_ticker(event: str, strike: float) -> str:
+    return f"{event}-T{strike:.2f}"
+
+
+async def fetch_ladder(
+    http: _Http,
+    markets15: Sequence[SettledMarket],
+    *,
+    data_dir: Path,
+    archive_cutoff_ts: int,
+    concurrency: int = 8,
+    base_url: str = KALSHI_REST_URL,
+    progress_every: int = 500,
+) -> int:
+    """For every 15-minute market that closes on the hour, the 1-minute candles of the two
+    hourly-ladder strikes around its strike, over its 15-minute life. Resumable per hour.
+
+    Tickers are built from the strike grid, finest spacing first: a coarser grid's strikes
+    also exist on a finer one, so the first spacing whose two strikes both exist is the
+    event's own and the pair is adjacent. A 404 means the ticker does not exist; only within
+    two days of the archive cutoff is the other endpoint tried as well. Hours where no spacing
+    exists are written with ``"status": "missing"``."""
+    path = ladder_path(data_dir)
+    done = {int(d["close_ts"]) for d in _lines(path)}
+    hours = [
+        m for m in markets15 if m.close_ts % 3600 == 0 and m.floor_strike and m.close_ts not in done
+    ]
+    hours.sort(key=lambda m: m.close_ts)
+    sem = asyncio.Semaphore(concurrency)
+    lock = asyncio.Lock()
+    written = 0
+
+    async def candles(ticker: str, close_ts: int) -> list[Candle] | None:
+        """Candles from the expected endpoint, else the other one; None when neither knows
+        the ticker."""
+        archived_first = close_ts < archive_cutoff_ts
+        urls = [
+            f"{base_url}/historical/markets/{ticker}/candlesticks",
+            f"{base_url}/series/{LADDER_SERIES}/markets/{ticker}/candlesticks",
+        ]
+        if not archived_first:
+            urls.reverse()
+        if abs(close_ts - archive_cutoff_ts) > 2 * 86_400:
+            urls = urls[:1]  # far from the cutoff the expected endpoint is authoritative
+        params = {"start_ts": close_ts - LADDER_WINDOW_S, "end_ts": close_ts, "period_interval": 1}
+        for url in urls:
+            try:
+                doc = await http.json(url, params)
+            except HttpStatusError as exc:
+                if exc.status == 404:
+                    continue
+                raise
+            return [candle_from_api(c) for c in doc.get("candlesticks") or []]
+        return None
+
+    async def one(m: SettledMarket, fh: Any) -> None:
+        nonlocal written
+        event = ladder_event_ticker(m.close_ts)
+        assert m.floor_strike is not None
+        row: dict[str, Any] = {"close_ts": m.close_ts, "event": event, "k15": m.floor_strike}
+        async with sem:
+            try:
+                for spacing in LADDER_SPACINGS:  # finest first (see docstring)
+                    lo, hi = bracket(m.floor_strike, spacing)
+                    hi_c = await candles(ladder_ticker(event, hi), m.close_ts)
+                    if hi_c is None:
+                        continue
+                    lo_c = await candles(ladder_ticker(event, lo), m.close_ts)
+                    if lo_c is None:
+                        continue
+                    row |= {
+                        "spacing": spacing,
+                        "lo": {"ticker": ladder_ticker(event, lo), "strike": lo, "candles": lo_c},
+                        "hi": {"ticker": ladder_ticker(event, hi), "strike": hi, "candles": hi_c},
+                    }
+                    break
+                else:
+                    row["status"] = "missing"
+            except (HttpStatusError, RetryExhaustedError) as exc:  # retried on the next run
+                log.warning("ladder %s: %s", event, exc)
+                return
+        async with lock:
+            fh.write(json.dumps(row, separators=(",", ":")) + "\n")
+            written += 1
+            if written % progress_every == 0:
+                fh.flush()
+                log.info("ladder hours: %d / %d", written, len(hours))
+
+    with _open_append(path) as fh:
+        await asyncio.gather(*(one(m, fh) for m in hours))
+    return written
+
+
+def load_ladder(data_dir: Path) -> dict[int, dict[str, Any]]:
+    """Ladder rows by close time (the last row wins if an hour was fetched twice)."""
+    return {int(d["close_ts"]): d for d in _lines(ladder_path(data_dir))}
+
+
+async def fetch_ladder_all(
+    *,
+    data_dir: Path,
+    kalshi_rate_per_s: float = 10.0,
+    signed: bool = True,
+    transport: httpx.AsyncBaseTransport | None = None,
+) -> dict[str, Any]:
+    """The ladder download for the 15-minute markets already on disk."""
+    markets15 = load_markets(data_dir, "KXBTC15M")
+    signer = kalshi_signer_from_env() if signed else None
+    async with httpx.AsyncClient(
+        timeout=httpx.Timeout(30.0), headers={"User-Agent": "cma-research"}, transport=transport
+    ) as cl:
+        kalshi = _Http(cl, rate_per_s=kalshi_rate_per_s, signer=signer)
+        cutoff_doc = await kalshi.json(f"{KALSHI_REST_URL}/historical/cutoff")
+        cutoff = _ts(cutoff_doc.get("market_settled_ts")) or 0
+        n = await fetch_ladder(kalshi, markets15, data_dir=data_dir, archive_cutoff_ts=cutoff)
+    return {"signed": signer is not None, "archive_cutoff": cutoff, "ladder_hours_new": n}
