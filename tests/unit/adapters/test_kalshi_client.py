@@ -18,6 +18,7 @@ from cma.adapters.kalshi import (
     KalshiRestBookPoller,
     KalshiRestClient,
     KalshiSigner,
+    normalize_pem,
     signing_available,
     ws_auth_headers,
 )
@@ -165,6 +166,36 @@ def test_rsa_pss_signature_verifies() -> None:  # pragma: no cover - environment
         padding.PSS(mgf=padding.MGF1(hashes.SHA256()), salt_length=padding.PSS.DIGEST_LENGTH),
         hashes.SHA256(),
     )
+
+
+def test_normalize_pem_accepts_how_keys_survive_settings_fields() -> None:
+    body = "QUJD" * 40  # 160 base64 chars, not a real key
+    canonical = (
+        "-----BEGIN RSA PRIVATE KEY-----\n"
+        + "\n".join(body[i : i + 64] for i in range(0, len(body), 64))
+        + "\n-----END RSA PRIVATE KEY-----\n"
+    )
+    one_line_escaped = canonical.strip().replace("\n", "\\n")
+    one_line_spaces = canonical.strip().replace("\n", " ")
+    quoted_crlf = '"' + canonical.replace("\n", "\r\n") + '"'
+    b64 = base64.b64encode(canonical.encode()).decode()
+    for variant in (canonical, one_line_escaped, one_line_spaces, quoted_crlf, b64):
+        assert normalize_pem(variant) == canonical
+    assert normalize_pem("not a key") == "not a key"
+
+
+def test_signer_reads_inline_pem_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("CMA_TEST_KALSHI_KEY", "kid-888")
+    monkeypatch.setenv(
+        "CMA_TEST_KALSHI_PEM",
+        "-----BEGIN PRIVATE KEY-----\\nxyz\\n-----END PRIVATE KEY-----",
+    )
+    signer = KalshiSigner.from_env(
+        key_id_env="CMA_TEST_KALSHI_KEY",
+        private_key_env="CMA_TEST_KALSHI_PEM",
+        clock=ManualClock(T0_NS),
+    )
+    assert signer is not None and "kid-888" not in repr(signer)
 
 
 def test_signer_from_env(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:

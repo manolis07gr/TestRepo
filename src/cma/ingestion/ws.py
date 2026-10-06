@@ -944,6 +944,9 @@ class PollingSession:
                 self._mark_failed(instrument)
                 continue
             any_ok = True
+            if self.health.state is not ConnectionState.CONNECTED:
+                # a pass over many targets can take a minute; one good book means we are up
+                self.health.on_connected(raw.recv_ts_ns)
             if instrument is not None:
                 self._ok_instruments.add(instrument)
                 if self._incidents is not None:

@@ -30,6 +30,7 @@ dev = [
   "types-PyYAML",
   "pandas-stubs",
   "scipy-stubs",
+  "cryptography>=42",   # exercises Kalshi request signing in tests
 ]
 postgres = ["psycopg[binary]>=3.1"]
 kalshi-auth = ["cryptography>=42"]

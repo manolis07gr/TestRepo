@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import base64
 import importlib.util
+import re
 from collections.abc import Callable, Mapping, Sequence
 from pathlib import Path
 from typing import Any, Final
@@ -63,6 +64,33 @@ class KalshiAuthError(CMAError):
 def signing_available() -> bool:
     """Whether the optional ``cryptography`` dependency needed for signing is installed."""
     return importlib.util.find_spec("cryptography") is not None
+
+
+_PEM_RE = re.compile(r"-----BEGIN ([A-Z ]+)-----(.*?)-----END \1-----", re.DOTALL)
+
+
+def normalize_pem(text: str) -> str:
+    """Canonical PEM from however a key survived a settings field or ``.env`` file.
+
+    Accepts a normal multi-line PEM, one line with literal ``\\n`` escapes, one line whose
+    newlines became spaces, or the whole PEM base64-encoded. Never logs the key.
+    """
+    value = text.strip().strip("'\"").strip()
+    if "-----BEGIN" not in value:
+        try:
+            decoded = base64.b64decode(value, validate=False).decode("utf-8")
+        except (ValueError, UnicodeDecodeError):
+            return value
+        if "-----BEGIN" not in decoded:
+            return value
+        value = decoded.strip()
+    value = value.replace("\\r\\n", "\n").replace("\\n", "\n").replace("\r\n", "\n")
+    m = _PEM_RE.search(value)
+    if m is None:
+        return value
+    label, body = m.group(1), "".join(m.group(2).split())
+    lines = [body[i : i + 64] for i in range(0, len(body), 64)]
+    return "\n".join([f"-----BEGIN {label}-----", *lines, f"-----END {label}-----"]) + "\n"
 
 
 def _rsa_pss_sha256_signer(private_key_pem: str) -> Callable[[bytes], bytes]:
@@ -132,7 +160,9 @@ class KalshiSigner:
             return None
         pem: Secret | None = None
         if private_key_env:
-            pem = load_secret(private_key_env, required=False)
+            inline = load_secret(private_key_env, required=False)
+            if inline is not None:
+                pem = Secret("KALSHI_PRIVATE_KEY", normalize_pem(inline.reveal()))
         if pem is None and private_key_path_env:
             path = load_secret(private_key_path_env, required=False)
             if path is not None:
@@ -142,7 +172,7 @@ class KalshiSigner:
                     raise KalshiAuthError(
                         f"cannot read the Kalshi private key file named by {private_key_path_env}"
                     ) from exc
-                pem = Secret("KALSHI_PRIVATE_KEY", text)
+                pem = Secret("KALSHI_PRIVATE_KEY", normalize_pem(text))
         if pem is None:
             return None
         return cls(key_id, pem, clock=clock)

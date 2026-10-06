@@ -9,6 +9,7 @@ from cma.adapters.kalshi.client import (
     KalshiAuthError,
     KalshiRestClient,
     KalshiSigner,
+    normalize_pem,
     signing_available,
     ws_auth_headers,
 )
@@ -54,6 +55,7 @@ __all__ = [
     "build_subscriptions",
     "fee_schedule_for_series",
     "kalshi_instrument",
+    "normalize_pem",
     "orderbook_stream",
     "parse_events_page",
     "parse_market",

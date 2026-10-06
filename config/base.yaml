@@ -63,8 +63,9 @@ venues:
     series: [KXBTCD, KXBTC, KXETHD, KXETH]
     rate_limit_per_s: 8
     credential_env:
-      key_id: KALSHI_API_KEY_ID
-      private_key_path: KALSHI_PRIVATE_KEY_PATH
+      key_id: KALSHI_API_KEY_ID              # the 36-character key ID shown by Kalshi
+      private_key: KALSHI_PRIVATE_KEY        # PEM text (multi-line, \n-escaped or base64)
+      private_key_path: KALSHI_PRIVATE_KEY_PATH   # or a path to the PEM file
   polymarket:
     enabled: true
     rest_url: https://clob.polymarket.com
