@@ -1,0 +1,33 @@
+{
+ "hardware": {
+  "platform": "Linux-6.18.44-fc-v70-x86_64-with-glibc2.39",
+  "machine": "x86_64",
+  "cpus": 4,
+  "python": "3.12.3",
+  "processor": "x86_64"
+ },
+ "targets": {
+  "events_per_s": 10000,
+  "normalize_p99_ms": 5,
+  "hot_path_p99_ms": 25,
+  "replay_x_realtime": 10
+ },
+ "ingestion": {
+  "messages": 50000,
+  "events": 50000,
+  "events_per_s": 29840.998648545206,
+  "normalize_p50_ms": 0.030058,
+  "normalize_p99_ms": 0.06960646000000009
+ },
+ "replay": {
+  "hours": 2,
+  "events": 81832,
+  "generate_s": 2.167413547000251,
+  "replay_wall_s": 5.2541709689994605,
+  "replay_events_per_s": 15574.674003343876,
+  "replay_x_realtime": 1370.315821235839,
+  "hot_path_p50_ms": 0.0404125,
+  "hot_path_p99_ms": 0.35820753999999977
+ },
+ "dataset": "synthetic market (seed 3, maker lag 350 ms, competitor 120 ms); ingestion payloads: alternating Kalshi orderbook_delta / Coinbase ticker"
+}

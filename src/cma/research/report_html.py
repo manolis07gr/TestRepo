@@ -9,6 +9,7 @@ from __future__ import annotations
 import html
 import json
 import math
+import re
 from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import Any
@@ -117,8 +118,8 @@ ul.plain{margin:0;padding-left:18px;display:grid;gap:6px}
 .legend{display:flex;flex-wrap:wrap;gap:16px;font-size:13px;color:var(--ink-2)}
 .key{display:inline-flex;align-items:center;gap:8px}
 .key i{display:inline-block;width:18px;height:3px;border-radius:2px}
-.panels{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:12px}
-.panels.wide{grid-template-columns:repeat(auto-fit,minmax(300px,1fr))}
+.panels{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,380px),1fr));gap:12px}
+.panels.wide{grid-template-columns:repeat(auto-fit,minmax(min(100%,300px),1fr))}
 .panel .tablebox{margin-top:8px}
 .panel{background:var(--surface);border:1px solid var(--rule);border-radius:6px;
   padding:10px 10px 6px;min-width:0}
@@ -145,7 +146,7 @@ details summary{cursor:pointer;padding:10px 12px;font-size:13px;color:var(--ink-
 details[open] summary{border-bottom:1px solid var(--rule)}
 details .tablebox{border:0;border-radius:0}
 .formula{font-family:var(--f-mono);font-size:13px;background:var(--accent-soft);
-  padding:2px 6px;border-radius:4px}
+  padding:2px 6px;border-radius:4px;white-space:nowrap}
 .evidence{display:grid;gap:10px}
 .ev{display:grid;grid-template-columns:auto 1fr;gap:10px;align-items:start;min-width:0}
 .cred{font-family:var(--f-mono);font-size:11px;padding:2px 7px;border-radius:999px;
@@ -205,8 +206,27 @@ def _cls(x: Any) -> str:
     return "pos" if v > 0 else "neg"
 
 
+GATE_LABELS = {
+    "oos_net_pnl": "out-of-sample net P&L",
+    "stress_latency_viable": "1 s latency stress",
+    "stress_cost_viable": "1.5× fee stress",
+    "profit_concentration": "profit concentration",
+    "parameter_stability": "parameter stability",
+    "sample_size": "sample size",
+    "data_quality": "data quality",
+    "mappings_approved_paper": "mapping approval",
+    "forward_paper_period": "forward paper period",
+}
+
+
+def tidy_numbers(text: str) -> str:
+    """Round over-long floats in stored reason strings (display only)."""
+    return re.sub(r"-?\d+\.\d{5,}", lambda m: f"{float(m.group()):.2f}", text)
+
+
 def _ms_label(ms: float) -> str:
-    return f"{ms / 1000:g} s" if ms >= 1000 else f"{ms:g} ms"
+    # non-breaking space keeps the number with its unit when the text wraps
+    return f"{ms / 1000:g}\u00a0s" if ms >= 1000 else f"{ms:g}\u00a0ms"
 
 
 def _attribution_table(attr: Mapping[str, Any]) -> str:
@@ -289,12 +309,11 @@ def _nice_ticks(lo: float, hi: float, n: int = 5) -> list[float]:
     raw = span / n
     mag = 10 ** math.floor(math.log10(raw))
     step = min((m * mag for m in (1, 2, 2.5, 5, 10) if m * mag >= raw), default=mag * 10)
-    start = math.floor(lo / step) * step
-    ticks = []
-    t = start
-    while t <= hi + 1e-9:
-        ticks.append(round(t, 10))
+    t = math.floor(lo / step) * step
+    ticks = [round(t, 10)]
+    while ticks[-1] < hi - 1e-9:  # the last tick must cover the maximum
         t += step
+        ticks.append(round(t, 10))
     return ticks
 
 
@@ -304,7 +323,7 @@ def _panel_svg(
     w, h = 300, 190
     left, right, top, bottom = 38, 10, 10, 30
     pw, ph = w - left - right, h - top - bottom
-    ticks = _nice_ticks(y_lo, y_hi, 4)
+    ticks = _nice_ticks(y_lo, y_hi, 6)
     y_min, y_max = ticks[0], ticks[-1]
 
     def x(i: int) -> float:
@@ -373,7 +392,7 @@ def _frontier_section(frontier: Sequence[Mapping[str, Any]]) -> str:
         by_mm.setdefault(float(r["mm_lag_ms"]), {}).setdefault(key, {})[int(r["latency_ms"])] = r
     vals = [v for r in rows if (v := _num(r.get("expected_c_per_contract"))) is not None]
     lo, hi = (min([*vals, 0.0]), max([*vals, 0.0])) if vals else (-1.0, 1.0)
-    pad = 0.08 * (hi - lo or 1.0)
+    pad = 0.04 * (hi - lo or 1.0)
     panels = []
     for mm in sorted(by_mm):
         title = f"maker lag {mm:g} ms"
@@ -501,30 +520,48 @@ def render_fragment(result: Mapping[str, Any]) -> str:
     need = _ms_label(pos_comp[0]) if pos_comp else "none in grid"
     buyable = [lat for lat in LAT if lat >= 100]
 
-    def negative_everywhere(mm: float, comp: Any) -> bool:
-        cells = [front(mm, comp, lat) for lat in buyable]
-        return all(
-            c is not None and (_num(c.get("expected_c_per_contract")) or 0.0) < 0 for c in cells
-        )
+    def best_buyable(mm: float, comp: Any) -> tuple[float, int] | None:
+        cells = [
+            (v, lat)
+            for lat in buyable
+            if (c := front(mm, comp, lat)) is not None
+            and (v := _num(c.get("expected_c_per_contract"))) is not None
+        ]
+        return max(cells) if cells else None
 
-    reported_negative = negative_everywhere(350.0, None) and negative_everywhere(350.0, 120.0)
+    alone = best_buyable(350.0, None)  # reported maker speed, no rival arbitrageur
+    rival = best_buyable(350.0, 120.0)  # reported maker speed, 120 ms arbitrageur
     ex = (kal.get("ex_ante") or {}).get(f"base@{crit}", {}) if kal else {}
-    if reported_negative and pos_comp:
+    tail = (
+        " No real venue data could be collected here, so the real-market call is to collect "
+        "data first."
+    )
+    if pos_comp and alone is not None and rival is not None and rival[0] < 0:
+        if alone[0] < 0:
+            at_350 = (
+                "At the reported ~350 ms the expected edge is negative at every latency we can "
+                "buy (100 ms and up), with or without a faster arbitrageur."
+            )
+        else:
+            best = "break-even" if alone[0] < 0.25 else "thin"
+            at_350 = (
+                f"At the reported ~350 ms the best case is {best} ({_fmt(alone[0], 2, True)}¢ "
+                f"per contract at {alone[1]} ms with no rival arbitrageur), and one 120 ms "
+                f"arbitrageur makes it negative at every latency "
+                f"({_fmt((doc_case or {}).get('expected_c_per_contract'), 2, True)}¢ at "
+                f"{crit} ms)."
+            )
         lede = (
             "Not at the speeds these markets are reported to run. In a market model calibrated "
-            "to public evidence, a lead-lag taker clears the 0.07·p(1−p) taker fee only when "
-            f"makers take about {need} or longer to re-quote after a BTC move. At the reported "
-            "~350 ms the expected edge is negative at every latency we can buy (100 ms and up), "
-            "with or without a faster arbitrageur. No real venue data could be collected here, "
-            "so the real-market call is to collect data first."
+            "to public evidence, a lead-lag taker clears the 0.07·p(1−p) taker fee reliably "
+            f"only once makers take about {need} or longer to re-quote after a BTC move. "
+            f"{at_350}{tail}"
         )
     else:
         lede = (
             f"In a market model calibrated to public evidence, 350 ms makers and a 120 ms "
             f"arbitrageur leave {_fmt((doc_case or {}).get('expected_c_per_contract'), 2, True)}¢ "
-            f"of expected edge per contract at {crit} ms after the 0.07·p(1−p) taker fee. No "
-            "real venue data could be collected here, so the real-market call is to collect "
-            "data first."
+            f"of expected edge per contract at {crit} ms after the 0.07·p(1−p) taker fee.{tail}"
         )
 
     verdicts = [
@@ -540,8 +577,12 @@ def render_fragment(result: Mapping[str, Any]) -> str:
             if b["label"] == "kalshi_fee"
             else "Synthetic variant, Polymarket fee + 150 ms delay"
         )
-        why = "; ".join(r.split(":")[0] for r in b.get("decision_reasons", [])[:3])
-        verdicts.append((label, b["decision"], why or "all gates passed"))
+        failed = [
+            GATE_LABELS.get(r.split(":")[0], r.split(":")[0])
+            for r in b.get("decision_reasons", [])[:4]
+        ]
+        why = "failed: " + ", ".join(failed) if failed else "all gates passed"
+        verdicts.append((label, b["decision"], why))
 
     def vclass(d: str) -> str:
         return "reject" if d == "REJECT" else ("more" if d == "COLLECT_MORE_DATA" else "")
@@ -575,7 +616,9 @@ def render_fragment(result: Mapping[str, Any]) -> str:
         mp = kal.get("market_params", {})
         parts = kal.get("partitions", {})
         mt = kal.get("multiple_testing", {})
-        reasons = "".join(f"<li>{html.escape(r)}</li>" for r in kal.get("decision_reasons", []))
+        reasons = "".join(
+            f"<li>{html.escape(tidy_numbers(r))}</li>" for r in kal.get("decision_reasons", [])
+        )
         base_html = f"""
 <section id="base">
   <h2>Base case on a locked final test</h2>
@@ -633,7 +676,8 @@ def render_fragment(result: Mapping[str, Any]) -> str:
   <p class="memo">A maker quoting one tick around fair value has not reacted yet. Buying the
   stale ask only clears the fee plus a 1¢ margin if BTC moved at least
   <span class="formula">r* = σ√T · (Φ⁻¹(p*) − Φ⁻¹(p₀))</span>. The table shows that move and
-  how often it happens inside a 350 ms reaction window (σ = 45%, Gaussian vs fat-tailed t₃).</p>
+  how often it happens inside a 350 ms reaction window (σ = 45%, Gaussian vs fat-tailed t₃);
+  chances per hour are a rate per hour spent at that time to expiry, before competition.</p>
   <div class="tablebox"><table><thead><tr><th>time to expiry · moneyness</th><th>fair</th>
   <th>fee</th><th>¢ per bp</th><th>move (bp)</th><th>P(Gauss)</th><th>P(t₃)</th>
   <th>chances / h</th></tr></thead><tbody>{"".join(hurdle_rows)}</tbody></table></div>

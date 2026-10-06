@@ -16,7 +16,6 @@ import os
 import platform
 import sys
 import time
-from decimal import Decimal
 from pathlib import Path
 
 import numpy as np
@@ -168,7 +167,6 @@ def main() -> int:
         "replay": bench_replay(args.hours),
         "dataset": "synthetic market (seed 3, maker lag 350 ms, competitor 120 ms); "
         "ingestion payloads: alternating Kalshi orderbook_delta / Coinbase ticker",
-        "decimal_note": str(Decimal("0.1") + Decimal("0.2")),
     }
     Path(args.out).parent.mkdir(parents=True, exist_ok=True)
     Path(args.out).write_text(json.dumps(result, indent=1) + "\n")

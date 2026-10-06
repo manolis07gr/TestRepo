@@ -86,7 +86,7 @@ def out_of_sample_gate(
     detail = f"net P&L {net:.2f} at {criterion.cost}@{criterion.latency_ms}ms"
     if criterion.require_ci_lower_above is not None:
         ok = ok and ci_lower is not None and ci_lower > criterion.require_ci_lower_above
-        detail += f"; CI lower {ci_lower}"
+        detail += f"; CI lower {'n/a' if ci_lower is None else f'{ci_lower:.2f}'}"
     return GateResult("oos_net_pnl", ok, detail, "economic")
 
 

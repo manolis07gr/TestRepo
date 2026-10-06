@@ -1,0 +1,269 @@
+{
+ "experiment_id": "edge-eval-20261006",
+ "created_ns": 1791266280597054702,
+ "git_commit": "3811f8c671f92d121e687b460a80a3cb403d3a66",
+ "config_hash": "ac775e935df525839246d1c4aadaea8bdfa11ddbfda292e5a073d2f97b6fc496",
+ "config": {
+  "mode": "BACKTEST",
+  "live_execution_enabled": false,
+  "data_quality": {
+   "max_clock_drift_ms": 50,
+   "fail_on_sequence_gap": true,
+   "max_reference_age_ms": 1000,
+   "max_prediction_feed_age_ms": 5000,
+   "max_forward_fill_ms": 2000
+  },
+  "simulation": {
+   "latency_ms": [
+    100,
+    250,
+    500,
+    1000,
+    2000,
+    5000
+   ],
+   "include_zero_latency_diagnostic": true,
+   "compute_latency_ms": 5,
+   "ack_latency_ms": 50,
+   "cancel_latency_ms": null,
+   "extra_feed_latency_ms": 0,
+   "queue_model": "conservative",
+   "allow_partial_fills": true,
+   "fill_on_cross": true,
+   "latency_jitter": "none",
+   "latency_jitter_sigma": 0.25,
+   "seed": 7
+  },
+  "signal": {
+   "min_net_edge_bps": "100",
+   "require_reviewed_mapping": true,
+   "ttl_ms": 10000,
+   "adverse_selection_buffer_bps": "0",
+   "uncertainty_buffer_bps": "0",
+   "default_order_qty": "10",
+   "max_levels_to_walk": 5
+  },
+  "risk": {
+   "initial_nav": "10000",
+   "max_contract_nav_pct": "2",
+   "max_event_nav_pct": "5",
+   "max_total_open_nav_pct": "10",
+   "daily_loss_stop_pct": "100"
+  },
+  "research": {
+   "final_test_locked": true,
+   "walk_forward": true,
+   "multiple_testing_log": true,
+   "final_test_fraction": 0.2,
+   "validation_fraction": 0.2,
+   "walk_forward_folds": 4,
+   "embargo_ms": 60000,
+   "fdr_alpha": 0.05,
+   "bootstrap_samples": 2000,
+   "min_forward_paper_days": 14,
+   "cost_scenarios": [
+    {
+     "name": "base",
+     "fee_multiplier": "1",
+     "extra_slippage_ticks": 0,
+     "extra_latency_ms": 0
+    },
+    {
+     "name": "fees_x1.5",
+     "fee_multiplier": "1.5",
+     "extra_slippage_ticks": 0,
+     "extra_latency_ms": 0
+    },
+    {
+     "name": "slip_+1tick",
+     "fee_multiplier": "1",
+     "extra_slippage_ticks": 1,
+     "extra_latency_ms": 0
+    },
+    {
+     "name": "fees_x2_slip_+1tick",
+     "fee_multiplier": "2",
+     "extra_slippage_ticks": 1,
+     "extra_latency_ms": 0
+    }
+   ]
+  },
+  "storage": {
+   "raw_dir": "data/raw",
+   "db_url": "sqlite:///data/cma.sqlite",
+   "reports_dir": "reports",
+   "quarantine_dir": "data/quarantine",
+   "mappings_dir": "config/mappings"
+  },
+  "venues": {},
+  "strategies": {}
+ },
+ "dataset": {
+  "kind": "synthetic",
+  "params": {
+   "hours": 48,
+   "seed": 20261007,
+   "mm_lag_ms": 350.0,
+   "competitor_latency_ms": 120.0,
+   "fee_schedule_id": "kalshi-standard"
+  }
+ },
+ "dataset_hash": "7c5562ded542a099784af034e7ed9be05c634a67ed4608d4e59f015279ff1df1",
+ "strategy": {
+  "name": "fv_taker",
+  "version": "1.0",
+  "params": {
+   "vol_multiplier": 1.1
+  }
+ },
+ "seed": 20261006,
+ "latency_grid_ms": [
+  0,
+  100,
+  250,
+  500,
+  1000,
+  2000,
+  5000
+ ],
+ "cost_scenarios": [
+  {
+   "name": "base",
+   "fee_multiplier": "1",
+   "extra_slippage_ticks": 0,
+   "extra_latency_ms": 0
+  },
+  {
+   "name": "fees_x1.5",
+   "fee_multiplier": "1.5",
+   "extra_slippage_ticks": 0,
+   "extra_latency_ms": 0
+  },
+  {
+   "name": "slip_+1tick",
+   "fee_multiplier": "1",
+   "extra_slippage_ticks": 1,
+   "extra_latency_ms": 0
+  },
+  {
+   "name": "fees_x2_slip_+1tick",
+   "fee_multiplier": "2",
+   "extra_slippage_ticks": 1,
+   "extra_latency_ms": 0
+  }
+ ],
+ "ledger_hashes": {
+  "base@0": "a26b3a6c3d9639ea9a40e13da8cc1de232e62c3c157726c1bada40505f1bc358",
+  "base@100": "a37cec748099e03f34289cc1523609d8e6443168c695bd36e3e0db2e692ed855",
+  "base@250": "d3124b6f4c8b34eb9ecc791095ef8793103fcec3a0a1e09486ed63abf65a2639",
+  "base@500": "4932f740dc95c371a34567d1480ef1e1015ee797d90c297bcb14064b3ac24b05",
+  "base@1000": "1ae1317e16d246b868827e20a30040eaf7d6efcc2774c2cafbd17725a31af10b",
+  "base@2000": "acf8b749fb2a8020abbef49b36594376e87ca83993d699412fb97c19612d9c3d",
+  "base@5000": "e5a5e31141fcf8502e28652f727ea0b8eb5f04524e1801ba891535c2fd3bbe54",
+  "fees_x1.5@0": "70fe31dc44f6d3f6bef034513cc637edac51b594bf5ab9f58f9e237c5aaad60e",
+  "fees_x1.5@100": "489aedf5ebb18a597bbd96bbc926aba4ce22cec4214f29d12cfc26bae746a138",
+  "fees_x1.5@250": "37d3c67c8c4e14e159a944d6aae3943e388938a291ed991956d7e36580d09984",
+  "fees_x1.5@500": "86a0dcf065a5fa53e14aa5da63a7c96ba0ec0c366099caa4af05163358c8af24",
+  "fees_x1.5@1000": "9fa56b7f94198a08f5f1d0eec9f28d8769d49de5462decee7723c27c029b9eef",
+  "fees_x1.5@2000": "9230fc71ef4f5fb38b2963be32fc8c285dc19a36c9e0db172522d82ce832b5b2",
+  "fees_x1.5@5000": "0d9d5c005f83b3c094b16d66cc5b00d3cf7ff2be8b81207f6d3da5185b841544",
+  "slip_+1tick@0": "356345aaa08f3925f0e12596ef08336d78657e596f9918a415619051e74a67db",
+  "slip_+1tick@100": "ee32196882ae5f44e47ffa895607f6554ee29d83a9a45f2679c7007146316b3f",
+  "slip_+1tick@250": "bde5ca0d495530b5ad7271580585d3eb02bd250df914f176a4e3f611e1b760df",
+  "slip_+1tick@500": "08ee6bcb2bc17cbbfd1349c9bc31e9bba22cdb1d0e5dbce7af637807184dd330",
+  "slip_+1tick@1000": "5f8e24f4f8068b87d6f500d280f3394db82edbce2d30cfeb25887139c291443d",
+  "slip_+1tick@2000": "ef561376839ca1eadae43f1a4a93646ef78b5bb9ecf76daa39f9e4a881755f63",
+  "slip_+1tick@5000": "801db96e542ce2a627d5ccc6f31d0ab8b01841ce679a22672ca9e19664756849",
+  "fees_x2_slip_+1tick@0": "8114bf2db69b3839a5cead5959d3fe68eb4b4c8ca7def27abc28b0a7b836215e",
+  "fees_x2_slip_+1tick@100": "3d7544caa4f001e74fcafd13c35501de927779edbc16d493e8614280e4c8b8de",
+  "fees_x2_slip_+1tick@250": "3863619e4d35f99fec665d9deedf99af6d6667265cad7fafc00c2f612ec5016f",
+  "fees_x2_slip_+1tick@500": "53557d94b5b6bdb19803822caaa68dd956a70e6a5178c04e57f64ff33ddbf8a9",
+  "fees_x2_slip_+1tick@1000": "bbaf320665d26d7aa654c7a882504c764daee6e2c2011a692fa670d428e72a35",
+  "fees_x2_slip_+1tick@2000": "fda9ce49ed06f087b8af3174606397fe6b9a4ad1d0ad68eba340f64c463dc184",
+  "fees_x2_slip_+1tick@5000": "7065b0bc49705fd2a15ccb7af1f7344fd6f3f7dad85cdbde0e20e5af3911b612"
+ },
+ "partitions": {
+  "train": [
+   1788220800000000000,
+   1788321600000000000
+  ],
+  "validation": [
+   1788321600000000000,
+   1788357600000000000
+  ],
+  "final_test": [
+   1788357600000000000,
+   1788393600000000000
+  ],
+  "evaluated_window": [
+   1788357600000000000,
+   1788393600000000000
+  ]
+ },
+ "environment": {
+  "python": "3.12.3",
+  "platform": "Linux-6.18.44-fc-v70-x86_64-with-glibc2.39",
+  "machine": "x86_64",
+  "numpy": "2.5.3",
+  "pandas": "3.0.6",
+  "scipy": "1.18.1",
+  "pyarrow": "25.0.1",
+  "pydantic": "2.13.5"
+ },
+ "reproduce": "cma reproduce --manifest <path-to-this-file> (experiment edge-eval-20261006)",
+ "plan": {
+  "seed": 20261006,
+  "frontier_hours": 8,
+  "frontier_mm_lags_ms": [
+   150.0,
+   350.0,
+   1000.0,
+   3000.0
+  ],
+  "frontier_competitors_ms": [
+   null,
+   120.0
+  ],
+  "latencies_ms": [
+   0,
+   100,
+   250,
+   500,
+   1000,
+   2000,
+   5000
+  ],
+  "base_hours": 48,
+  "base_mm_lag_ms": 350.0,
+  "base_competitor_ms": 120.0,
+  "sensitivity_edges_bps": [
+   50,
+   100,
+   200,
+   300
+  ],
+  "sensitivity_vol_mult": [
+   0.9,
+   1.0,
+   1.1
+  ],
+  "frontier_realized_vol_scenarios": [
+   [
+    350.0,
+    120.0
+   ],
+   [
+    3000.0,
+    null
+   ],
+   [
+    3000.0,
+    120.0
+   ]
+  ],
+  "criterion_latency_ms": 250,
+  "polymarket_taker_delay_ms": 150,
+  "workers": 4,
+  "warmup_minutes": 20
+ }
+}

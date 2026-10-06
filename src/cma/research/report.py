@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import math
+import re
 from collections.abc import Iterable, Mapping, Sequence
 from pathlib import Path
 from typing import Any
@@ -27,6 +28,11 @@ def _f(x: Any, nd: int = 2) -> str:
     if math.isinf(v):
         return "∞" if v > 0 else "-∞"
     return f"{v:,.{nd}f}"
+
+
+def _tidy(text: str) -> str:
+    """Round over-long floats in stored reason strings (display only)."""
+    return re.sub(r"-?\d+\.\d{5,}", lambda m: f"{float(m.group()):.2f}", text)
 
 
 def _table(headers: Sequence[str], rows: Iterable[Sequence[Any]]) -> str:
@@ -184,7 +190,7 @@ def render_markdown(result: Mapping[str, Any]) -> str:
     for b in bases:
         w(
             f"* Synthetic base case `{b['label']}`: **`{b['decision']}`** — "
-            + "; ".join(b.get("decision_reasons", [])[:4])
+            + "; ".join(_tidy(r) for r in b.get("decision_reasons", [])[:4])
         )
     w("")
     w(
@@ -295,7 +301,7 @@ def render_markdown(result: Mapping[str, Any]) -> str:
         )
         w("")
         w(
-            f"Bootstrap 95% CI of mean P&L per {ci.get('unit', 'unit')} (n={ci.get('n')}): "
+            f"Bootstrap 95% CI of mean net P&L per {ci.get('unit', 'unit')}, n = {ci.get('n')}: "
             f"[{_f(ci.get('lower'))}, {_f(ci.get('upper'))}] around {_f(ci.get('mean'))}. "
             "Hold-to-settlement P&L of one hourly ladder is one correlated bet on BTC, so the "
             "family — not the contract — is the unit of independent evidence."
@@ -526,7 +532,8 @@ def render_markdown(result: Mapping[str, Any]) -> str:
     w(
         "Move needed (bps of BTC) for a one-tick stale quote to clear the taker fee + 1¢ "
         "net, and the chance it happens inside a 350 ms reaction window (Gaussian vs "
-        "variance-matched Student-t ν=3), σ = 45%:"
+        "variance-matched Student-t ν=3), σ = 45%. Opportunities per hour are a rate per hour "
+        "spent at that time to expiry, before any competition:"
     )
     w("")
     rows = []

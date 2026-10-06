@@ -6,11 +6,14 @@ contracts (Kalshi, Polymarket) strongly enough to leave **executable net alpha**
 fees, spread, depth, latency, partial fills and adverse selection. Built to the
 "Technical Scope, Architecture, Validation Plan & Test Specification" v1.0 (5 Oct 2026).
 
-> **Edge evaluation:** see [`reports/edge_evaluation/DECISION_REPORT.md`](reports/edge_evaluation/DECISION_REPORT.md).
-> Real-market decision: **COLLECT_MORE_DATA**. The build environment's network policy blocked every
-> market-data host, so no real venue data was examined. The calibrated simulation study plus the
-> public evidence say a sub-second lead-lag *taker* on BTC contracts is not profitable at today's
-> fees unless makers reprice far slower (≳1–3 s) than the ~350 ms reported for Polymarket.
+> **Edge evaluation:** [`reports/edge_evaluation/DECISION_REPORT.md`](reports/edge_evaluation/DECISION_REPORT.md)
+> (charts: `reports/edge_evaluation/edge_evaluation.html`). Real-market decision: **COLLECT_MORE_DATA**:
+> the build environment's network policy blocked every market-data host, so no real venue data was
+> examined. In a calibrated simulation run through the production pipeline, a lead-lag *taker* on
+> BTC contracts clears the 0.07·p(1−p) taker fee reliably only when makers take ≳1 s to re-quote.
+> At the ~350 ms reported for Polymarket it is break-even at best (+0.05¢/contract at 100 ms with
+> no rival) and negative once a 120 ms arbitrageur is present (−0.74¢ at 250 ms); both synthetic
+> base cases are **REJECT**.
 
 ## What is in the box
 
@@ -35,7 +38,8 @@ pytest -q                             # unit, property, integration (mocks), rep
 python scripts/check_test_ids.py      # all 55 scope test IDs present
 cma smoke                             # paper-mode smoke test on mock feeds -> health status
 cma hurdle                            # analytical fee/latency hurdle table
-cma evaluate --out reports/edge_evaluation   # full synthetic edge study (~40 min, 4 cores)
+cma evaluate --out reports/edge_evaluation   # full synthetic edge study (~30 min, 4 cores)
+python scripts/benchmark.py           # s.22 performance numbers -> docs/benchmarks.json
 cma live                              # always refused in v1 (exit code 3)
 ```
 

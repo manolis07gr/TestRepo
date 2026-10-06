@@ -58,3 +58,15 @@ cancels every working simulated order.
 coverage, per-package coverage (≥ 90% domain/portfolio/simulator/risk, ≥ 80% core), fixture
 reproducibility, migration from an empty DB, paper smoke test, `cma live` must fail.
 Set `OPENBLAS_NUM_THREADS=1` (BLAS thread contention slows small dot products).
+
+## Performance (scope s.22)
+
+`python scripts/benchmark.py` writes `docs/benchmarks.json` with hardware metadata. Reference
+run (4 vCPU x86_64, Python 3.12, `OPENBLAS_NUM_THREADS=1`):
+
+| Measure | Result | Target |
+|---|---|---|
+| Ingestion (parse + normalize, Kalshi deltas / Coinbase tickers) | ~28,000 events/s | ≥ 10,000 |
+| Per-event normalization p99 | 0.07 ms | ≤ 5 ms |
+| Strategy + signal hot path p99 | 0.36 ms | ≤ 25 ms |
+| Replay of a 2 h synthetic market (82k events) | ~15,000 events/s, ~1,300× real time | ≥ 10× |

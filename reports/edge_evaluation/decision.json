@@ -1,0 +1,28 @@
+{
+ "real_market_decision": "COLLECT_MORE_DATA",
+ "synthetic_decisions": {
+  "kalshi_fee": "REJECT",
+  "polymarket_fee_speedbump": "REJECT"
+ },
+ "synthetic_reasons": {
+  "kalshi_fee": [
+   "oos_net_pnl: net P&L -490.20 at base@250ms; CI lower -117.04184999999998",
+   "stress_latency_viable: net -249.45 at base@1000ms",
+   "stress_cost_viable: net -177.92 at fees_x1.5@250ms",
+   "parameter_stability: 42% of 12 neighbouring settings profitable"
+  ],
+  "polymarket_fee_speedbump": [
+   "oos_net_pnl: net P&L -509.01 at base@250ms; CI lower -105.470392125",
+   "stress_latency_viable: net -341.21 at base@1000ms",
+   "stress_cost_viable: net -200.67 at fees_x1.5@250ms",
+   "parameter_stability: 50% of 12 neighbouring settings profitable"
+  ]
+ },
+ "manifest": {
+  "experiment_id": "edge-eval-20261006",
+  "git_commit": "3811f8c671f92d121e687b460a80a3cb403d3a66",
+  "config_hash": "ac775e935df525839246d1c4aadaea8bdfa11ddbfda292e5a073d2f97b6fc496",
+  "dataset_hash": "7c5562ded542a099784af034e7ed9be05c634a67ed4608d4e59f015279ff1df1",
+  "seed": 20261006
+ }
+}
