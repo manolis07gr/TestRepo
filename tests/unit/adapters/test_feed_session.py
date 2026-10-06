@@ -421,3 +421,72 @@ def test_session_subscribes_markets_listed_after_connect() -> None:
     added = [f for f in sent[len(initial) :] if f["params"]["channels"] == ["orderbook_delta"]]
     assert [f["params"]["market_tickers"] for f in added] == [["KXNEW-1"], ["KXNEW-2"]]
     assert session.subscription_refreshes == 1
+
+
+OTHER_TICKER = "KXBTCD-26OCT0617-T111999.99"
+OTHER_INST = f"KALSHI:{OTHER_TICKER}"
+
+
+def shared_frame(kind: str, seq: int, ticker: str) -> str:
+    """Kalshi folds every orderbook subscription into one: one sid, one seq counter."""
+    body: dict[str, object] = {"market_ticker": ticker}
+    if kind == "snapshot":
+        body |= {"yes_dollars_fp": [["0.4500", "10.00"]], "no_dollars_fp": [["0.5300", "10.00"]]}
+        return json.dumps({"type": "orderbook_snapshot", "sid": 1, "seq": seq, "msg": body})
+    body |= {"price_dollars": "0.4500", "delta_fp": "1.00", "side": "yes"}
+    return json.dumps({"type": "orderbook_delta", "sid": 1, "seq": seq, "msg": body})
+
+
+def test_kalshi_sequence_is_checked_per_subscription_not_per_market() -> None:
+    """Interleaved markets share one seq counter: no false gaps and no snapshot requests.
+    A real gap in the subscription may hit any of its books, so all are re-snapshotted."""
+    clock = ManualClock(T0_NS)
+    books = BookManager()
+    seen: dict[str, object] = {}
+    session: FeedSession
+
+    def ready() -> tuple[bool, bool]:
+        return session.is_ready(KALSHI_INST), session.is_ready(OTHER_INST)
+
+    def mid() -> None:
+        seen["mid"] = (*ready(), session.health.sequence_gaps, session.health.resyncs)
+
+    def after_gap() -> None:
+        seen["after_gap"] = ready()
+
+    def finish() -> None:
+        seen["final"] = ready()
+        session.request_stop()
+
+    script = [
+        shared_frame("snapshot", 1, KALSHI_TICKER),
+        shared_frame("snapshot", 2, OTHER_TICKER),
+        shared_frame("delta", 3, KALSHI_TICKER),
+        shared_frame("delta", 4, OTHER_TICKER),
+        shared_frame("delta", 5, KALSHI_TICKER),
+        shared_frame("delta", 5, KALSHI_TICKER),  # duplicate: dropped
+        mid,
+        shared_frame("delta", 7, OTHER_TICKER),  # seq 6 lost
+        after_gap,
+        shared_frame("snapshot", 8, KALSHI_TICKER),
+        shared_frame("snapshot", 9, OTHER_TICKER),
+        finish,
+    ]
+    transport = ScriptedTransport([script], clock=clock, step_ns=1_000)
+    session = make_session(
+        transport,
+        clock,
+        books,
+        subscriptions=build_subscriptions([KALSHI_TICKER, OTHER_TICKER], trades=False),
+    )
+    asyncio.run(session.run())
+    assert seen == {"mid": (True, True, 0, 0), "after_gap": (False, False), "final": (True, True)}
+    assert (session.health.sequence_gaps, session.health.resyncs) == (1, 2)
+    resyncs = [json.loads(f) for f in transport.connections[0].sent][-2:]
+    assert sorted(f["params"]["market_tickers"][0] for f in resyncs) == [
+        KALSHI_TICKER,
+        OTHER_TICKER,
+    ]
+    assert {f["params"]["sids"][0] for f in resyncs} == {1}
+    builder = books.get(KALSHI_INST)
+    assert builder is not None and builder.counters.duplicates_ignored == 1

@@ -46,6 +46,7 @@ Trades
 
 from __future__ import annotations
 
+import re
 from collections.abc import Mapping
 from dataclasses import dataclass
 from decimal import Decimal
@@ -459,6 +460,21 @@ class KalshiAdapter:
         ticker = body.get("market_ticker") if isinstance(body, dict) else None
         return [kalshi_instrument(ticker)] if isinstance(ticker, str) and ticker else None
 
+    def sequence_scope(self, raw: RawMessage) -> tuple[str, int] | None:
+        """Orderbook ``seq`` counts per subscription (``sid``) on one connection.
+
+        Kalshi folds every market subscribed on the orderbook channel into one
+        subscription (later subscribe commands are answered ``ok`` and join it), so the
+        scope is ``(connection, sid)``, not the market (see ``SupportsSequenceScope``).
+        """
+        if not raw.stream.startswith("ws"):
+            return None
+        sid = _SID_RE.search(raw.payload)
+        seq = _SEQ_RE.search(raw.payload)
+        if sid is None or seq is None:
+            return None
+        return f"{raw.connection_id}|{sid.group(1)}", int(seq.group(1))
+
     def resync_messages(self, instrument_id: str, raw: RawMessage, request_id: int) -> list[str]:
         """``update_subscription``/``get_snapshot`` for the gapped market's subscription."""
 
@@ -473,6 +489,10 @@ class KalshiAdapter:
 
         frame = safe_idempotency_key(build)
         return [] if frame is None else [frame]
+
+
+_SID_RE: Final = re.compile(r'"sid"\s*:\s*(\d+)')
+_SEQ_RE: Final = re.compile(r'"seq"\s*:\s*(\d+)')
 
 
 def _ws_key(payload: str) -> str | None:

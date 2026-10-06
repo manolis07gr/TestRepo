@@ -850,18 +850,18 @@ def stream_quotes(
                 continue
             inst = ev.instrument_id
             if sub is not None and ev.sequence is not None:
-                # every book message of the subscription counts, wanted or not
+                # every book message of the subscription counts, wanted or not; same rule
+                # as the collector (MessagePipeline._check_scope)
                 prev_seq = sub_last.get(sub)
-                if prev_seq is not None and ev.sequence <= prev_seq:
-                    continue  # duplicate or old message of this subscription
-                if (
-                    isinstance(ev, BookDeltaEvent)
-                    and prev_seq is not None
-                    and ev.sequence != prev_seq + 1
-                ):
-                    sub_gaps += 1  # a lost message: any book of this subscription may be off
+                is_snapshot = isinstance(ev, BookSnapshotEvent)
+                if not is_snapshot and prev_seq is not None and ev.sequence <= prev_seq:
+                    continue  # duplicate or old delta of this subscription
+                if prev_seq is not None and ev.sequence != prev_seq + 1:
+                    sub_gaps += 1  # a lost message: any other book of it may be off
                     for other in sub_books.get(sub, ()):
-                        if (ob := builders.get(other)) is not None:
+                        if (not is_snapshot or other != inst) and (
+                            ob := builders.get(other)
+                        ) is not None:
                             ob.invalidate(QualityFlag.SEQUENCE_GAP, "subscription_gap")
                 sub_last[sub] = ev.sequence
                 sub_books.setdefault(sub, set()).add(inst)

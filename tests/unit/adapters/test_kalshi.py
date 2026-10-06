@@ -353,3 +353,16 @@ def test_resync_requests_in_band_snapshot_for_the_gapped_subscription() -> None:
     assert json.loads(frame) == json.loads(build_get_snapshot_command(7, 2, [KALSHI_TICKER]))
     assert json.loads(frame)["params"]["action"] == "get_snapshot"
     assert ADAPTER.resync_messages(KALSHI_INST, raw_msg(Venue.KALSHI, "{oops"), 8) == []
+
+
+def test_sequence_scope_is_the_subscription_on_one_connection() -> None:
+    delta = fixture_text("kalshi", "ws_orderbook_delta_yes.json")  # sid 2, seq 2
+    raw = raw_msg(Venue.KALSHI, delta, connection_id="conn-7")
+    assert ADAPTER.sequence_scope(raw) == ("conn-7|2", 2)
+    assert ADAPTER.sequence_scope(raw_msg(Venue.KALSHI, delta, connection_id="conn-8")) == (
+        "conn-8|2",
+        2,
+    )
+    page = fixture_text("kalshi", "orderbook_rest_fp.json")
+    rest = raw_msg(Venue.KALSHI, page, stream=f"rest:orderbook:{KALSHI_TICKER}")
+    assert ADAPTER.sequence_scope(rest) is None

@@ -275,6 +275,9 @@ class BookManager:
     crossed_policy: str = "invalidate"
     tick_sizes: dict[str, Decimal] = field(default_factory=dict)
     sequence_free_venues: frozenset[Venue] = frozenset()
+    # venues whose sequence numbers count per subscription, not per book: the ingestion
+    # pipeline checks continuity per scope and hands their books unsequenced updates
+    scope_sequenced_venues: frozenset[Venue] = frozenset()
     books: dict[str, L2BookBuilder] = field(default_factory=dict)
 
     def builder(self, venue: Venue, instrument_id: str) -> L2BookBuilder:
@@ -284,7 +287,9 @@ class BookManager:
                 venue=venue,
                 instrument_id=instrument_id,
                 tick_size=self.tick_sizes.get(instrument_id),
-                require_sequence=self.require_sequence and venue not in self.sequence_free_venues,
+                require_sequence=self.require_sequence
+                and venue not in self.sequence_free_venues
+                and venue not in self.scope_sequenced_venues,
                 crossed_policy=self.crossed_policy,
             )
             self.books[instrument_id] = b

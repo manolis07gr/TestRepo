@@ -38,6 +38,7 @@ quarantined book updates and failed polls.
 from __future__ import annotations
 
 import asyncio
+import dataclasses
 import inspect
 import logging
 import random
@@ -55,6 +56,7 @@ from cma.adapters.base import (
     MalformedPayloadError,
     SupportsAttribution,
     SupportsResync,
+    SupportsSequenceScope,
     VenueAdapter,
     resolve_idempotency_key,
 )
@@ -339,6 +341,12 @@ class MessagePipeline:
         self.on_events = on_events
         self.instruments: set[str] = set()
         self.last_snapshot_ns: dict[str, int] = {}
+        # sequence continuity per scope for adapters that number per subscription
+        self._scoped = isinstance(adapter, SupportsSequenceScope)
+        self._scope_last: dict[str, int] = {}
+        self._scope_books: dict[str, set[str]] = {}
+        if self._scoped:
+            books.scope_sequenced_venues = books.scope_sequenced_venues | {adapter.venue}
 
     def handle(self, raw: RawMessage) -> PipelineResult:
         """Record ``raw`` (dropping duplicates) and process it."""
@@ -360,6 +368,8 @@ class MessagePipeline:
             return PipelineResult(quarantined=True, needs_snapshot=self._invalidate_affected(raw))
 
         result = PipelineResult()
+        if self._scoped and any(isinstance(e, BookSnapshotEvent | BookDeltaEvent) for e in events):
+            events = self._check_scope(raw, events, result)
         process_ts = self.clock.now_ns()
         for event in events:
             if event.process_ts_ns is None:
@@ -382,6 +392,54 @@ class MessagePipeline:
                 self.health.callback_errors += 1
                 log.exception("downstream event callback failed")
         return result
+
+    def _check_scope(
+        self, raw: RawMessage, events: list[MarketEvent], result: PipelineResult
+    ) -> list[MarketEvent]:
+        """Sequence continuity per scope (see ``SupportsSequenceScope``).
+
+        A delta at or below the scope's last sequence is a duplicate and is dropped; a
+        delta past the next one is a gap that invalidates every book of the scope and asks
+        for their snapshots, since any of them may have lost an update. A snapshot is a
+        full book: it is always applied and resets the scope's position, and when it is
+        out of line the *other* books of the scope are invalidated. Book events then go on
+        without a sequence, since per-book contiguity does not hold.
+        """
+        assert isinstance(self.adapter, SupportsSequenceScope)
+        try:
+            scope = self.adapter.sequence_scope(raw)
+        except Exception:
+            log.exception("%s: sequence scope failed", raw.venue.value)
+            scope = None
+        if scope is None:
+            return events
+        key, seq = scope
+        last = self._scope_last.get(key)
+        snapshots = {e.instrument_id for e in events if isinstance(e, BookSnapshotEvent)}
+        if not snapshots and last is not None and seq <= last:
+            kept: list[MarketEvent] = []
+            for e in events:
+                if isinstance(e, BookSnapshotEvent | BookDeltaEvent):
+                    self.books.builder(raw.venue, e.instrument_id).counters.duplicates_ignored += 1
+                else:
+                    kept.append(e)
+            return kept
+        if last is not None and seq != last + 1:
+            self.health.sequence_gaps += 1
+            for instrument in sorted(self._scope_books.get(key, set()) - snapshots):
+                self.books.builder(raw.venue, instrument).invalidate(
+                    QualityFlag.SEQUENCE_GAP, "scope_gap"
+                )
+                result.needs_snapshot.append(instrument)
+        self._scope_last[key] = seq
+        members = self._scope_books.setdefault(key, set())
+        out: list[MarketEvent] = []
+        for e in events:
+            if isinstance(e, BookSnapshotEvent | BookDeltaEvent):
+                members.add(e.instrument_id)
+                e = dataclasses.replace(e, sequence=None)
+            out.append(e)
+        return out
 
     def _apply_book(
         self, event: BookSnapshotEvent | BookDeltaEvent, result: PipelineResult

@@ -113,6 +113,22 @@ class SupportsAttribution(Protocol):
         ...
 
 
+@runtime_checkable
+class SupportsSequenceScope(Protocol):
+    """Optional adapter capability: where a book message's sequence number counts.
+
+    Some venues number messages per *subscription*, not per book; Kalshi folds every
+    market of its orderbook channel into one subscription, so one market's sequence
+    numbers are never contiguous. The ingestion layer then checks continuity per scope,
+    applies book updates without a per-book sequence check, and treats a gap as a
+    possible loss for every book of that scope (fail closed).
+    """
+
+    def sequence_scope(self, raw: RawMessage) -> tuple[str, int] | None:
+        """``(scope key, sequence)`` of a sequenced book message, else None."""
+        ...
+
+
 def connection_scoped(key: str) -> str:
     """Mark ``key`` as unique only within the connection that delivered it."""
     return CONNECTION_SCOPED_PREFIX + key
