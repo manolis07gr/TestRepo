@@ -1,0 +1,267 @@
+{
+ "templates": {
+  "SNIIn": {
+   "n": 206,
+   "n_sne": 41,
+   "ha_cov": 195,
+   "ew_clean": 131,
+   "both_cov": 181,
+   "r_valid": 61,
+   "r_min": 0.5969166551437044,
+   "r_med": 3.6569568382435262,
+   "r_max": 15.944595321443968
+  },
+  "SNII": {
+   "n": 200,
+   "n_sne": 13,
+   "ha_cov": 184,
+   "ew_clean": 118,
+   "both_cov": 181,
+   "r_valid": 13,
+   "r_min": 0.9870116332728168,
+   "r_med": 2.443141105222568,
+   "r_max": 7.756075535770836
+  },
+  "SNIIb": {
+   "n": 120,
+   "n_sne": 9,
+   "ha_cov": 117,
+   "ew_clean": 15,
+   "both_cov": 113,
+   "r_valid": 1,
+   "r_min": 0.284220355178581,
+   "r_med": 0.284220355178581,
+   "r_max": 0.284220355178581
+  },
+  "SNIa-CSM": {
+   "n": 52,
+   "n_sne": 11,
+   "ha_cov": 44,
+   "ew_clean": 25,
+   "both_cov": 42,
+   "r_valid": 0,
+   "r_min": null,
+   "r_med": null,
+   "r_max": null
+  },
+  "SLSN-II": {
+   "n": 82,
+   "n_sne": 21,
+   "ha_cov": 73,
+   "ew_clean": 43,
+   "both_cov": 72,
+   "r_valid": 8,
+   "r_min": 1.0661560390588425,
+   "r_med": 2.093244764053499,
+   "r_max": 7.730340258953228
+  }
+ },
+ "student": {
+  "digitized": 1100,
+  "matched": 1069,
+  "per_figure": {
+   "EW_SNIIn.jpg": {
+    "n": 172,
+    "reliable": 116,
+    "negative": 170,
+    "positive": 2,
+    "abs_gt_30": 158,
+    "abs_gt_100": 95,
+    "med_absdlog_reliable": 0.08124013149107145,
+    "frac_within_0p1dex": 0.6206896551724138,
+    "signflips_reliable": 0
+   },
+   "EW_SNII.jpg": {
+    "n": 137,
+    "reliable": 83,
+    "negative": 126,
+    "positive": 11,
+    "abs_gt_30": 103,
+    "abs_gt_100": 27,
+    "med_absdlog_reliable": 0.2748604046854765,
+    "frac_within_0p1dex": 0.1566265060240964,
+    "signflips_reliable": 4
+   },
+   "EW_SNIIb.jpg": {
+    "n": 110,
+    "reliable": 14,
+    "negative": 76,
+    "positive": 34,
+    "abs_gt_30": 61,
+    "abs_gt_100": 34,
+    "med_absdlog_reliable": 0.49131751242878263,
+    "frac_within_0p1dex": 0.0,
+    "signflips_reliable": 6
+   },
+   "EW_SNIa-CSM.jpg": {
+    "n": 43,
+    "reliable": 24,
+    "negative": 43,
+    "positive": 0,
+    "abs_gt_30": 35,
+    "abs_gt_100": 22,
+    "med_absdlog_reliable": 0.131980313348398,
+    "frac_within_0p1dex": 0.4166666666666667,
+    "signflips_reliable": 0
+   },
+   "EW_SLSN-II.jpg": {
+    "n": 67,
+    "reliable": 40,
+    "negative": 64,
+    "positive": 3,
+    "abs_gt_30": 40,
+    "abs_gt_100": 11,
+    "med_absdlog_reliable": 0.09676764026444079,
+    "frac_within_0p1dex": 0.5,
+    "signflips_reliable": 0
+   },
+   "R_SNIIn.jpg": {
+    "n": 166,
+    "reliable": 58,
+    "negative": 15,
+    "positive": 151,
+    "abs_gt_30": 3,
+    "abs_gt_100": 2,
+    "med_absdlog_reliable": 0.14353071274719265,
+    "frac_within_0p1dex": 0.39655172413793105,
+    "signflips_reliable": 0
+   },
+   "R_SNII.jpg": {
+    "n": 159,
+    "reliable": 10,
+    "negative": 47,
+    "positive": 112,
+    "abs_gt_30": 12,
+    "abs_gt_100": 3,
+    "med_absdlog_reliable": 0.31267746169508714,
+    "frac_within_0p1dex": 0.0,
+    "signflips_reliable": 4
+   },
+   "R_SNIIb.jpg": {
+    "n": 108,
+    "reliable": 1,
+    "negative": 64,
+    "positive": 44,
+    "abs_gt_30": 2,
+    "abs_gt_100": 1,
+    "med_absdlog_reliable": 0.2267629586529025,
+    "frac_within_0p1dex": 0.0,
+    "signflips_reliable": 0
+   },
+   "R_SNIa-CSM.jpg": {
+    "n": 41,
+    "reliable": 0,
+    "negative": 22,
+    "positive": 19,
+    "abs_gt_30": 16,
+    "abs_gt_100": 4,
+    "med_absdlog_reliable": null,
+    "frac_within_0p1dex": null,
+    "signflips_reliable": 0
+   },
+   "R_SLSN-II.jpg": {
+    "n": 66,
+    "reliable": 8,
+    "negative": 22,
+    "positive": 44,
+    "abs_gt_30": 1,
+    "abs_gt_100": 0,
+    "med_absdlog_reliable": 0.23223137142858769,
+    "frac_within_0p1dex": 0.0,
+    "signflips_reliable": 0
+   }
+  },
+  "EW": {
+   "n": 529,
+   "negative": 479,
+   "positive": 50,
+   "reliable": 277,
+   "abs_gt_30": 397,
+   "abs_gt_100": 189
+  },
+  "R": {
+   "n": 540,
+   "negative": 170,
+   "positive": 370,
+   "reliable": 77,
+   "abs_gt_30": 34,
+   "abs_gt_100": 10
+  }
+ },
+ "archive": {
+  "n_spectra": 1648,
+  "n_sne": 99,
+  "usable": 1607,
+  "sources": {
+   "OSC": 76,
+   "WISeREP": 23
+  },
+  "per_class": {
+   "SNIIn": {
+    "n": 359,
+    "n_sne": 43,
+    "ew_valid": 298,
+    "ew_clean": 188,
+    "both_cov": 260,
+    "r_valid": 55,
+    "r_med": 4.281673009812376,
+    "r_min": 0.95409076698014,
+    "r_max": 16.017267436148337
+   },
+   "SNII": {
+    "n": 276,
+    "n_sne": 13,
+    "ew_valid": 245,
+    "ew_clean": 170,
+    "both_cov": 235,
+    "r_valid": 20,
+    "r_med": 2.4526691451020404,
+    "r_min": 0.8890994674157777,
+    "r_max": 4.687555394025745
+   },
+   "SNIIb": {
+    "n": 200,
+    "n_sne": 9,
+    "ew_valid": 187,
+    "ew_clean": 18,
+    "both_cov": 173,
+    "r_valid": 1,
+    "r_med": 0.2557651177829402,
+    "r_min": 0.2557651177829402,
+    "r_max": 0.2557651177829402
+   },
+   "SNIa-CSM": {
+    "n": 90,
+    "n_sne": 8,
+    "ew_valid": 68,
+    "ew_clean": 42,
+    "both_cov": 54,
+    "r_valid": 0,
+    "r_med": null,
+    "r_min": null,
+    "r_max": null
+   },
+   "SLSN-II": {
+    "n": 110,
+    "n_sne": 15,
+    "ew_valid": 92,
+    "ew_clean": 30,
+    "both_cov": 82,
+    "r_valid": 3,
+    "r_med": 2.0570187495192487,
+    "r_min": 0.7959932832886832,
+    "r_max": 2.251162068415068
+   }
+  }
+ },
+ "template_vs_archive": {
+  "matched": 314,
+  "ew_pairs": 153,
+  "ew_med_absdlog": 0.009877054558335678,
+  "r_pairs": 38,
+  "r_med_dlog": -0.002104234920675993,
+  "r_std_dlog": 0.028687717561575937,
+  "calib_n": 275,
+  "calib_frac_gt_0p1dex": 0.02181818181818182
+ }
+}
