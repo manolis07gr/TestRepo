@@ -28,6 +28,7 @@ figures/student/         the ten figures under review (as received)
 figures/corrected/       the same ten figures re-measured on the same templates
 figures/archive/         the ten figures reproduced from public spectra + template-vs-archive checks
 figures/*.png            validation and diagnostic figures used in the report
+report_page/             report page template and built page (Validation and Results tabs)
 data/                    downloaded public spectra (git-ignored; re-created by fetch_archive.py)
 ```
 
@@ -54,7 +55,15 @@ python -I scripts/make_archive_figures.py --bank $BANK --ameas results/archive_m
        --matches results/template_archive_matches.csv --tmeas results/templates_measurements.csv \
        --outdir figures/archive
 python -I scripts/summarize.py --results results       # numbers quoted in REPORT.md -> results/summary.json
+python -I scripts/results_data.py --ameas results/archive_measurements_phased.csv --out results/observed_results.json
+python -I scripts/page_data.py --results results --out results/results_page_data.json
+python -I scripts/build_page.py --template report_page/page.template.html \
+       --data results/results_page_data.json --out report_page/balmer_audit.html
 ```
+
+`results_data.py` computes the per-class trends of the observed sample (Section 5 of the report);
+`report_page/balmer_audit.html` is the report page (Validation and Results tabs; it expects the figures
+under `fig/` next to it, as published).
 
 ## Measurement definitions (this work)
 

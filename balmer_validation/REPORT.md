@@ -8,8 +8,8 @@ spectra (Open Supernova Catalog, WISeREP).  All numbers below are in `results/su
 
 * **Hα EWs of the interacting classes are reproduced.** For well-defined measurements the student's
   values agree with mine to a median of **0.08 dex (SNe IIn, 116 points)**, 0.10 dex (SLSN-II) and
-  0.13 dex (SNe Ia-CSM), and the IIn trend of |EW| growing from ~30 Å to ~1000 Å over 150 d is also
-  seen in the public spectra.
+  0.13 dex (SNe Ia-CSM), and the public spectra show the same IIn trend: median |EW| ≈ 100 Å near
+  maximum, ≈ 270 Å at 60–150 d (Section 5).
 * **The SN II and SN IIb EW figures are not reliable as plotted.** The 50 positive EWs (11 SN II,
   34 IIb) and the sign changes are produced by P-Cygni absorption and continuum placement, not by
   emission-line physics; in nebular SN IIb spectra the "Hα" window is dominated by [O I] 6300,6364.
@@ -163,19 +163,83 @@ date is plausible (else from discovery):
 *(a) phase zero-points; (b, c) EW and Hα/Hβ of each template against the public spectrum it was made
 from (correlation of spectral features > 0.95; 314 pairs); (d) relative Hβ/Hα flux calibration.*
 
-What the public data support:
+The trends these spectra show are in Section 5.
 
-* **SNe IIn**: Hα EW grows from a few tens of Å near maximum to several hundred–1000 Å after 100 d
-  (188 clean spectra, 43 SNe).  Valid Balmer decrements (55 spectra) range 0.95–16, median 4.3, mostly above Case B and
-  rising with time in individual objects (1997eg 5 → 9; 2015da ≈ 10–14; 2010jl ≈ 4–5), with a few flat
-  decrements near 1–1.6 (LSQ12hxg).
-* **SNe II**: valid decrements only around maximum (20 spectra, median 2.5); afterwards Hβ is not an
-  emission line.
-* **SNe Ia-CSM**: no valid full-profile decrement (0/54), consistent with the weak Hβ reported for this
-  class (Silverman et al. 2013; Sharma et al. 2023 report weak Hβ and decrements ≈ 7).
-* **SLSN-II / IIb**: 3 and 1 valid decrements respectively — too few for trends.
+## 5. Trends in the observed sample
 
-## 5. Recommendations
+All public spectra measured with the method above; only clean Hα EWs and valid Balmer decrements enter.
+Spectra of one object from the same night are merged (359 object-nights), and population statistics
+count objects, not spectra: medians over objects per phase bin, 95 % intervals from resampling objects.
+Phases are days from maximum light, or from discovery where the catalogue maximum is implausible.
+Numbers: `results/observed_results.json`; per-night values: `results/observed_results_points.csv`;
+interactive charts: the Results tab of the report page (`report_page/balmer_audit.html`).
+
+**Across classes**
+
+* Hα strengthens with time only in the interacting classes. From within ±20 d of maximum to 60–150 d the
+  median |EW| grows ×2.7 in SNe IIn (100 → 273 Å), ×3.2 in SLSN-II (27 → 89 Å) and ×2.6 in SNe Ia-CSM
+  (101 → 258 Å); normal SNe II stay flat (165 → 136 Å).
+* SLSNe-II carry the weakest Hα for their continuum: 27 Å near maximum, a quarter of the IIn and Ia-CSM values.
+* Balmer decrements separate the classes: SNe IIn median 4.4, two thirds of nights above Case B and
+  steepening with time; SNe Ia-CSM show no Hβ emission (Hα/Hβ > 10 on 81 % of nights against the local
+  continuum); SNe II give 2.2, and only within a week of maximum.
+
+**SNe IIn** (37 objects with clean EWs on 161 nights; 15 with decrements on 52 nights)
+
+* Hα grows relative to the continuum: median |EW| ≈ 80 Å before maximum, ≈ 100 Å at 0–20 d, ≈ 170 Å at
+  40–70 d, ≈ 270 Å at 70–100 d, ≈ 610 Å at 100–150 d. 17 of 22 objects with ≥ 3 epochs over ≥ 20 d rise
+  (median +0.39 dex per 100 d); pooled Spearman ρ = +0.51 (95 % interval 0.23–0.69); ρ = +0.44 without the
+  six objects whose phases count from discovery.
+* Early Hα strength differs widely: near maximum |EW| spans about 20–1000 Å. Some objects are Hα-dominated
+  from the start (1997eg, 2015da, 2010jl), others start weak and climb as the continuum fades (1998S 34 →
+  1340 Å, 2008fq 19 → 220 Å, 2000eo 35 → 130 Å).
+* Decrements: median 4.4 (interquartile 2.6–5.9, range 1.1–16); 67 % of nights above 2.86. Milky Way
+  reddening changes them by ≤ 8 % (median 2 %); host extinction is not corrected.
+* Decrements steepen after maximum: ≈ 2.7 within ±20 d (12 objects), 4.4 after 40 d (7 objects), 6–8
+  beyond 70 d; ρ(phase) = +0.49 (0.13–0.75). Five of six objects with ≥ 3 epochs steepen (2015da 4.7 → 13.5,
+  1997eg 5.2 → 8.3, 2010jl 2.9 → 4.3, 2006aa 2.2 → 2.6, LSQ12hxg 1.1 → 1.3); 1999eb stays near 2.7.
+* Flat decrements are rare: only LSQ12hxg stays below 2, the regime expected where Hα is optically thick
+  in very dense gas (Drake & Ulrich 1980). Steep and steepening decrements point to collisional excitation
+  in dense gas and/or growing internal extinction (dust formation was reported in SN 2010jl; Gall et al. 2014).
+* Decrement vs. Hα strength is only suggestive: ρ = +0.59 over nights, but +0.43 (−0.27 to 0.86) at fixed
+  phase and +0.46 between objects (p = 0.09, 15 objects).
+
+**SLSN-II** (10 objects with clean EWs on 30 nights, including SLSN-IIn 2006gy; decrements for 1 object)
+
+* Weakest Hα relative to the continuum: ≈ 27 Å within ±20 d (6 objects).
+* Hα strengthens as the continuum fades: ≈ 90 Å at 60–150 d (4 objects); ρ(phase) = +0.52 (0.07–0.85);
+  2008es 13 → 126 Å, 2006gy 29 → 62 Å, 2008am 5 → 7 Å.
+* No class decrement: only SN 2008am (2.1, 2.3, 0.8 within ~20 d of maximum). The five PTF SLSNe-IIn have
+  one public spectrum each, none with a clean Hα measurement.
+
+**SNe Ia-CSM** (6 objects with clean EWs on 36 nights; no valid decrement)
+
+* The tightest growth of Hα with time: ≈ 100 Å within ±20 d (5 objects), ≈ 260 Å at 60–150 d (4 objects);
+  ρ(phase) = +0.80 (0.40–0.88); all four objects with ≥ 3 epochs rise (2011km 53 → 247 Å, 2012ca 192 →
+  497 Å, 2017eby 102 → 162 Å, 1999E 234 → 288 Å).
+* Hβ is not detected: in none of the 54 spectra covering both lines is Hβ significant net emission (21 are
+  net absorption). Lower limits against the local continuum (16th percentile of the Hα flux over the 84th
+  percentile of the Hβ emission excess) exceed 10 on 81 % of nights and Case B on all (median ≈ 20).
+* The limits depend on the continuum under Hβ, which is the Fe-dominated SN Ia spectrum; values need it
+  modelled and removed. Sharma et al. (2023) report decrements ≈ 7 with a different method.
+
+**SNe II (comparison)** (11 objects with clean EWs on 114 nights; decrements for 3 objects)
+
+* No growth of Hα relative to the continuum: ≈ 110–180 Å from −20 to +150 d; ρ(phase) = −0.05 (−0.24 to
+  0.18); per-object slopes scatter around zero (median +0.09 dex per 100 d).
+* Decrements only within a week of maximum (1999em, 2002gd, 2005cs): median 2.2 (1.7–2.8). These are
+  photospheric lines, not a recombination value; later Hβ is P-Cygni absorption blended with Fe II.
+
+**SNe IIb (comparison)** (6 objects with clean EWs on 18 nights)
+
+* Hα EW is rarely well defined (fast absorption before maximum, [O I] after ~60 d); no trend can be
+  measured. The single formal decrement (1993J, 0.26) is a continuum hump, not Hβ emission.
+
+Caveats: small, heterogeneous samples with uneven phase coverage; host extinction not corrected;
+full-line integrals over ±10,000 km/s (narrow and intermediate components not separated); phases from
+discovery are offset from maximum by an unknown amount.
+
+## 6. Recommendations
 
 1. Drop or repair the defective templates (Section 3.4); de-duplicate before counting epochs.
 2. Measure Balmer decrements only for emission-dominated lines; fit and remove blends (He I 4922/5016,
@@ -191,7 +255,7 @@ What the public data support:
 6. Check every number's sensitivity to the window and continuum choice (the MC in `bv/measure.py` does
    this) before interpreting trends.
 
-## 6. Limits of this validation
+## 7. Limits of this validation
 
 * The student's code was not available; his values were read off the JPEG figures (precision ≈ 1 % of a
   decade) and his exact windows could not be recovered.
@@ -206,6 +270,8 @@ What the public data support:
 ## References
 
 Baer, M. J. 2024, Duperfit v0.1.0, Zenodo, doi:10.5281/zenodo.10992738 ·
+Drake, S. A., & Ulrich, R. K. 1980, ApJS, 42, 351 ·
+Gall, C., et al. 2014, Nature, 511, 326 ·
 Gutiérrez, C. P., et al. 2014, ApJL, 786, L15 ·
 Guillochon, J., et al. 2017, ApJ, 835, 64 (Open Supernova Catalog) ·
 Sharma, Y., et al. 2023, ApJ, 948, 52 ·

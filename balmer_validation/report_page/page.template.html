@@ -1,0 +1,1164 @@
+<title>Duperfit Balmer-Line Audit</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Spectral:wght@500;600&family=Source+Sans+3:ital,wght@0,400;0,600;1,400&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: one reading column (~68ch) with wider "plates" and chart cards; cool instrument neutrals,
+   the two Balmer line colours (Hα 656 nm red, Hβ 486 nm cyan) as text accents; three validated
+   categorical hues for the interacting classes, grey for the comparison classes. */
+:root {
+  --bg: #f4f6f8;
+  --surface: #ffffff;
+  --ink: #15202b;
+  --muted: #586a7a;
+  --rule: #d3dbe2;
+  --ha: #b8173a;
+  --hb: #0a7896;
+  --ok: #2c7a4b;
+  --warn: #9a6200;
+  --bad: #b3261e;
+  --ok-bg: #e5f2ea;
+  --warn-bg: #f7eedc;
+  --bad-bg: #f8e5e3;
+  --plate: #ffffff;
+  --code-bg: #e9eef2;
+  --c1: #2a78d6;
+  --c2: #eb6834;
+  --c3: #1baf7a;
+  --cg: #7f8e9b;
+  --viz-dot: #a7b3bd;
+  --viz-track: #cdd5dc;
+  --viz-grid: #edf1f4;
+  --viz-axis: #c1cbd3;
+  --viz-surface: #ffffff;
+  --tip-bg: #ffffff;
+  --tip-shadow: 0 6px 24px rgba(21, 32, 43, 0.14);
+  --font-display: "Spectral", "Iowan Old Style", "Palatino Linotype", Georgia, serif;
+  --font-body: "Source Sans 3", "Segoe UI", system-ui, -apple-system, sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0d1318; --surface: #141c23; --ink: #e2e9ef; --muted: #93a4b3; --rule: #28343e;
+    --ha: #ff6f86; --hb: #4cc3e2; --ok: #5cc48a; --warn: #e3a640; --bad: #ff7b72;
+    --ok-bg: #153024; --warn-bg: #33270f; --bad-bg: #3a1a19; --plate: #f3f5f7; --code-bg: #1c2731;
+    --c1: #3987e5; --c2: #d95926; --c3: #199e70; --cg: #8b9baa;
+    --viz-dot: #5b6b78; --viz-track: #34424e; --viz-grid: #1f2a33; --viz-axis: #3a4752; --viz-surface: #141c23;
+    --tip-bg: #1b252e; --tip-shadow: 0 6px 24px rgba(0, 0, 0, 0.45);
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0d1318; --surface: #141c23; --ink: #e2e9ef; --muted: #93a4b3; --rule: #28343e;
+  --ha: #ff6f86; --hb: #4cc3e2; --ok: #5cc48a; --warn: #e3a640; --bad: #ff7b72;
+  --ok-bg: #153024; --warn-bg: #33270f; --bad-bg: #3a1a19; --plate: #f3f5f7; --code-bg: #1c2731;
+  --c1: #3987e5; --c2: #d95926; --c3: #199e70; --cg: #8b9baa;
+  --viz-dot: #5b6b78; --viz-track: #34424e; --viz-grid: #1f2a33; --viz-axis: #3a4752; --viz-surface: #141c23;
+  --tip-bg: #1b252e; --tip-shadow: 0 6px 24px rgba(0, 0, 0, 0.45);
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body { background: var(--bg); color: var(--ink); font-family: var(--font-body); font-size: 17px; line-height: 1.55; }
+.page { max-width: 1180px; margin: 0 auto; padding-inline: 20px; padding-block: 40px 72px; display: flex; flex-direction: column; gap: 40px; }
+.tabpanel { display: flex; flex-direction: column; gap: 56px; min-width: 0; }
+.tabpanel[hidden] { display: none !important; }
+.prose { max-width: 68ch; }
+h1, h2, h3 { font-family: var(--font-display); font-weight: 600; line-height: 1.15; text-wrap: balance; margin: 0; }
+h1 { font-size: clamp(2rem, 4.6vw, 3rem); letter-spacing: -0.01em; }
+h2 { font-size: clamp(1.45rem, 2.6vw, 1.8rem); }
+h3 { font-size: 1.15rem; }
+p { margin: 0; }
+section { display: flex; flex-direction: column; gap: 18px; min-width: 0; }
+.eyebrow { font-family: var(--font-mono); font-size: 0.78rem; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
+.lede { font-size: 1.15rem; color: var(--ink); max-width: 64ch; }
+.muted { color: var(--muted); }
+a { color: var(--hb); text-underline-offset: 2px; }
+a:focus-visible, button:focus-visible, select:focus-visible, summary:focus-visible { outline: 2px solid var(--hb); outline-offset: 2px; border-radius: 4px; }
+code, .mono { font-family: var(--font-mono); font-size: 0.86em; }
+code { background: var(--code-bg); padding: 0.08em 0.35em; border-radius: 4px; }
+.num { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+.ha { color: var(--ha); }
+.hb { color: var(--hb); }
+
+/* wavelength strip */
+.strip { max-width: 760px; width: 100%; }
+.strip svg { width: 100%; height: auto; display: block; }
+.strip text { font-family: var(--font-mono); font-size: 10px; fill: var(--muted); }
+.strip .lab { font-size: 11px; font-weight: 500; }
+.strip .lab-ha { fill: var(--ha); }
+.strip .lab-hb { fill: var(--hb); }
+.strip .tick { stroke: var(--muted); stroke-width: 0.8; }
+.strip .win { fill: var(--ink); fill-opacity: 0.12; stroke: var(--ink); stroke-opacity: 0.45; stroke-width: 0.8; }
+.strip-cap { font-size: 0.85rem; color: var(--muted); max-width: 760px; }
+
+/* page tabs */
+.pagetabs { display: flex; flex-wrap: wrap; gap: 4px 8px; border-bottom: 1px solid var(--rule); }
+.ptab { font: inherit; font-size: 1rem; font-weight: 600; background: none; border: none; border-bottom: 3px solid transparent; padding: 10px 6px; margin-bottom: -1px; color: var(--muted); cursor: pointer; }
+.ptab:hover { color: var(--ink); }
+.ptab[aria-selected="true"] { color: var(--ink); border-bottom-color: var(--ink); }
+
+/* verdict list */
+.verdicts { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 14px; }
+.verdicts li { background: var(--surface); border: 1px solid var(--rule); border-radius: 10px; padding: 16px 18px; display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.verdicts h3 { font-size: 1.05rem; }
+.verdicts p { font-size: 0.95rem; }
+.chip { display: inline-flex; align-self: flex-start; align-items: center; gap: 6px; font-family: var(--font-mono); font-size: 0.72rem; letter-spacing: 0.06em; text-transform: uppercase; padding: 3px 8px; border-radius: 999px; font-weight: 500; }
+.chip::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: currentColor; }
+.chip.ok { color: var(--ok); background: var(--ok-bg); }
+.chip.warn { color: var(--warn); background: var(--warn-bg); }
+.chip.bad { color: var(--bad); background: var(--bad-bg); }
+
+/* tables */
+.table-wrap { overflow-x: auto; border: 1px solid var(--rule); border-radius: 10px; background: var(--surface); }
+table { border-collapse: collapse; width: 100%; font-size: 0.93rem; }
+th, td { padding: 9px 12px; text-align: left; vertical-align: top; border-bottom: 1px solid var(--rule); }
+tr:last-child td { border-bottom: none; }
+th { font-family: var(--font-mono); font-size: 0.72rem; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); font-weight: 500; white-space: nowrap; }
+td.r, th.r { text-align: right; }
+td.r { font-variant-numeric: tabular-nums; }
+td .chip { white-space: nowrap; }
+table.dense td, table.dense th { padding: 6px 10px; font-size: 0.86rem; }
+
+/* figure viewer */
+.tabs { display: flex; flex-wrap: wrap; gap: 6px 18px; align-items: center; }
+.tabgroup { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.tabgroup .glabel { font-family: var(--font-mono); font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); margin-right: 4px; }
+.tab { font: inherit; font-size: 0.9rem; border: 1px solid var(--rule); background: var(--surface); color: var(--ink); padding: 5px 11px; border-radius: 999px; cursor: pointer; }
+.tab:hover { border-color: var(--muted); }
+.tab[aria-selected="true"] { background: var(--ink); color: var(--bg); border-color: var(--ink); }
+.panel { display: flex; flex-direction: column; gap: 14px; }
+.panel .note { max-width: 90ch; font-size: 0.97rem; }
+.triplet { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; }
+@media (max-width: 860px) { .triplet { grid-template-columns: minmax(0, 1fr); } }
+figure { margin: 0; display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.plate { background: var(--plate); border: 1px solid var(--rule); border-radius: 8px; padding: 6px; }
+.plate img { display: block; width: 100%; height: auto; max-width: 100%; border-radius: 3px; }
+figcaption { font-size: 0.86rem; color: var(--muted); }
+figcaption b { color: var(--ink); font-weight: 600; }
+.wide { max-width: 100%; }
+
+ul.plain { margin: 0; padding-left: 1.2em; display: flex; flex-direction: column; gap: 8px; }
+.kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 12px; }
+.kpi { background: var(--surface); border: 1px solid var(--rule); border-radius: 10px; padding: 12px 14px; display: flex; flex-direction: column; gap: 2px; }
+.kpi .v { font-family: var(--font-mono); font-size: 1.35rem; }
+.kpi .k { font-size: 0.85rem; color: var(--muted); }
+pre { background: var(--code-bg); border-radius: 8px; padding: 14px 16px; overflow-x: auto; font-family: var(--font-mono); font-size: 0.8rem; line-height: 1.5; margin: 0; }
+footer { font-size: 0.85rem; color: var(--muted); border-top: 1px solid var(--rule); padding-top: 18px; }
+
+/* results */
+.classnav { display: flex; flex-wrap: wrap; gap: 8px 10px; align-items: center; font-size: 0.92rem; }
+.classnav .glabel { font-family: var(--font-mono); font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); }
+.classnav a { text-decoration: none; color: var(--ink); border: 1px solid var(--rule); border-radius: 999px; padding: 4px 11px; background: var(--surface); display: inline-flex; align-items: center; gap: 7px; }
+.classnav a:hover { border-color: var(--muted); }
+.sw { display: inline-block; width: 10px; height: 10px; border-radius: 50%; background: var(--cc); flex: none; }
+.sw.sq { border-radius: 2px; }
+h2 .sw { width: 12px; height: 12px; margin-right: 10px; vertical-align: 0.12em; }
+.grid2 { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px; }
+@media (max-width: 920px) { .grid2 { grid-template-columns: minmax(0, 1fr); } }
+.chartcard { background: var(--surface); border: 1px solid var(--rule); border-radius: 10px; padding: 14px 14px 10px; display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.chartcard h3 { font-family: var(--font-body); font-size: 1rem; font-weight: 600; line-height: 1.3; }
+.chartcard .sub { font-size: 0.85rem; color: var(--muted); }
+.key { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 0.8rem; color: var(--muted); align-items: center; }
+.key .k { display: inline-flex; align-items: center; gap: 6px; }
+.key svg { display: block; overflow: visible; }
+.chart { width: 100%; min-height: 330px; position: relative; }
+.chart .fallback { padding: 24px 6px; color: var(--muted); font-size: 0.9rem; }
+.viz { display: block; }
+.viz text { font-family: var(--font-mono); font-size: 11px; fill: var(--muted); }
+.viz .atitle { font-family: var(--font-body); font-size: 12.5px; }
+.viz .dlab { font-family: var(--font-body); font-size: 12.5px; fill: var(--ink); }
+.viz .grid line { stroke: var(--viz-grid); stroke-width: 1; }
+.viz .axis line { stroke: var(--viz-axis); stroke-width: 1; }
+.viz .caseb { stroke: var(--muted); stroke-width: 1; opacity: 0.75; }
+.viz .track { fill: none; stroke: var(--viz-track); stroke-width: 1.2; }
+.viz .err { stroke: var(--viz-dot); stroke-width: 1; opacity: 0.6; }
+.viz .dot { fill: var(--viz-dot); stroke: var(--viz-surface); stroke-width: 1.5; }
+.viz .band { fill: var(--cc); fill-opacity: 0.12; stroke: none; }
+.viz .med { fill: none; stroke: var(--cc); stroke-width: 2.25; stroke-linejoin: round; stroke-linecap: round; }
+.viz .medpt { fill: var(--cc); stroke: var(--viz-surface); stroke-width: 2; }
+.viz .lim { fill: var(--cc); stroke: var(--viz-surface); stroke-width: 1.5; }
+.viz .cdot { fill: var(--cc); stroke: var(--viz-surface); stroke-width: 1.5; }
+.viz .mtick { stroke: var(--ink); stroke-width: 2.25; stroke-linecap: round; }
+.viz .keyline { stroke: var(--cc); stroke-width: 2.25; stroke-linecap: round; }
+.viz .cross { stroke: var(--muted); stroke-width: 1; opacity: 0.6; }
+.viz .hit { fill: transparent; cursor: crosshair; }
+.viz.has-hl .dot:not(.is-hl), .viz.has-hl .err:not(.is-hl), .viz.has-hl .lim:not(.is-hl) { opacity: 0.25; }
+.viz.has-hl .track:not(.is-hl) { opacity: 0.3; }
+.viz .dot.is-hl { fill: var(--cc); }
+.viz .err.is-hl { stroke: var(--cc); opacity: 1; }
+.viz .track.is-hl { stroke: var(--cc); stroke-width: 2; }
+.viz .lim.is-hl { stroke: var(--ink); }
+.tip { position: absolute; z-index: 20; pointer-events: none; background: var(--tip-bg); color: var(--ink); border: 1px solid var(--rule); border-radius: 8px; box-shadow: var(--tip-shadow); padding: 8px 10px; font-size: 0.84rem; line-height: 1.4; max-width: 280px; display: flex; flex-direction: column; gap: 2px; }
+.tip .v { font-family: var(--font-mono); font-size: 0.95rem; font-weight: 500; }
+.tip .l { color: var(--muted); }
+.tip .row { display: flex; align-items: center; gap: 7px; }
+.tip .lk { width: 14px; height: 0; border-top: 2.5px solid var(--cc); flex: none; }
+.clshead { display: flex; flex-direction: column; gap: 6px; }
+.clshead .meta { font-size: 0.92rem; color: var(--muted); }
+.controls { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; font-size: 0.9rem; }
+.controls select { font: inherit; font-size: 0.9rem; color: var(--ink); background: var(--surface); border: 1px solid var(--rule); border-radius: 6px; padding: 4px 8px; max-width: 100%; }
+details.box { border: 1px solid var(--rule); border-radius: 10px; background: var(--surface); min-width: 0; }
+details.box > summary { cursor: pointer; padding: 10px 14px; font-weight: 600; font-size: 0.95rem; }
+details.box[open] > summary { border-bottom: 1px solid var(--rule); }
+details.box .inner { padding: 12px 14px; display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+details.box .inner .table-wrap { border-radius: 8px; }
+.findings { margin: 0; padding-left: 1.2em; display: flex; flex-direction: column; gap: 10px; max-width: 80ch; }
+.findings b { font-weight: 600; }
+.divider { display: flex; align-items: center; gap: 12px; color: var(--muted); font-family: var(--font-mono); font-size: 0.75rem; letter-spacing: 0.08em; text-transform: uppercase; }
+.divider::after { content: ""; flex: 1; height: 1px; background: var(--rule); }
+@media (prefers-reduced-motion: no-preference) { .tab, .ptab { transition: background-color .15s, color .15s, border-color .15s; } }
+</style>
+
+<main class="page">
+
+<header style="display:flex;flex-direction:column;gap:16px">
+  <span class="eyebrow">Validation report · Duperfit SN templates · Hα and Hβ</span>
+  <h1>Duperfit Balmer-Line Audit</h1>
+  <p class="lede">An independent check of the ten figures of <span class="ha">Hα</span> equivalent widths and <span class="ha">Hα</span>/<span class="hb">Hβ</span> ratios, and the corrected measurements on <span class="num">1,648</span> public spectra of the same <span class="num">99</span> supernovae from the Open Supernova Catalog and WISeREP, with the trends they show.</p>
+  <div class="strip" aria-label="Wavelength strip: the 4000–7000 Å continuum range of the student-style method and the ±10,000 km/s windows around Hβ and Hα used in this work">
+    <svg viewBox="0 0 640 74" role="img">
+      <defs>
+        <linearGradient id="vis" x1="0" x2="1" y1="0" y2="0">
+          <stop offset="0" stop-color="#6b3fc4"/><stop offset="0.167" stop-color="#2f5bff"/>
+          <stop offset="0.287" stop-color="#00b5e2"/><stop offset="0.4" stop-color="#2fbf55"/>
+          <stop offset="0.6" stop-color="#f0cf2a"/><stop offset="0.733" stop-color="#ff7a1a"/>
+          <stop offset="0.854" stop-color="#e3202e"/><stop offset="1" stop-color="#7d0a14"/>
+        </linearGradient>
+      </defs>
+      <!-- x = 20 + (λ - 4000)/3000 * 600 -->
+      <rect x="20" y="22" width="600" height="14" rx="2" fill="url(#vis)" opacity="0.9"/>
+      <rect class="win" x="159.8" y="18" width="64.8" height="22" rx="2"/>
+      <rect class="win" x="488.8" y="18" width="87.6" height="22" rx="2"/>
+      <line x1="192.3" x2="192.3" y1="14" y2="44" stroke="currentColor" style="stroke:var(--hb)" stroke-width="1.6"/>
+      <line x1="532.6" x2="532.6" y1="14" y2="44" stroke="currentColor" style="stroke:var(--ha)" stroke-width="1.6"/>
+      <text class="lab lab-hb" x="192.3" y="10" text-anchor="middle">Hβ 4861 Å</text>
+      <text class="lab lab-ha" x="532.6" y="10" text-anchor="middle">Hα 6563 Å</text>
+      <g>
+        <line class="tick" x1="20" x2="20" y1="44" y2="49"/><text x="20" y="60" text-anchor="start">4000</text>
+        <line class="tick" x1="220" x2="220" y1="44" y2="49"/><text x="220" y="60" text-anchor="middle">5000</text>
+        <line class="tick" x1="420" x2="420" y1="44" y2="49"/><text x="420" y="60" text-anchor="middle">6000</text>
+        <line class="tick" x1="620" x2="620" y1="44" y2="49"/><text x="620" y="60" text-anchor="end">7000 Å</text>
+      </g>
+    </svg>
+  </div>
+  <p class="strip-cap">The strip spans 4000–7000 Å, the range of the single polynomial continuum in the student-style method. Shaded boxes are the ±10,000 km/s windows this audit integrates over (4699–5023 Å and 6344–6782 Å), with continuum sidebands just outside them.</p>
+</header>
+
+<nav class="pagetabs" role="tablist" aria-label="Report sections">
+  <button class="ptab" role="tab" id="pt-validation" aria-controls="validation" aria-selected="true">Validation of the student's figures</button>
+  <button class="ptab" role="tab" id="pt-results" aria-controls="results" aria-selected="false" tabindex="-1">Results: corrected measurements and trends</button>
+</nav>
+
+<div class="tabpanel" id="validation" role="tabpanel" aria-labelledby="pt-validation">
+
+<section id="verdict">
+  <span class="eyebrow">Verdict</span>
+  <h2>What holds up and what does not</h2>
+  <ul class="verdicts">
+    <li><span class="chip ok">Validated</span><h3>Hα EWs of the interacting classes</h3>
+      <p>Where the measurement is well-defined, the student's values agree with ours to a median of <span class="num">0.08 dex</span> for SNe IIn (116 points), <span class="num">0.10 dex</span> for SLSN-II and <span class="num">0.13 dex</span> for SNe Ia-CSM. The public spectra show the same IIn trend: |EW| grows from about 100 Å near maximum to several hundred Å after 60 d.</p></li>
+    <li><span class="chip bad">Not reliable</span><h3>SN II and SN IIb EWs</h3>
+      <p>The 50 positive EWs (11 SN II, 34 IIb) and the sign changes come from P-Cygni absorption and where the continuum is placed. In nebular IIb spectra the Hα window is dominated by [O I] 6300,6364. Only 14 of the 110 IIb points are well-defined, and SN II |EW| are a median 1.9× smaller than ours.</p></li>
+    <li><span class="chip bad">Not valid</span><h3>Most Hα/Hβ values are not Balmer decrements</h3>
+      <p>Only <span class="num">77 of 540</span> plotted ratios come from spectra where both lines are significant, emission-dominated and unblended. The 170 negative ratios and those beyond ±30 occur when the integrated "Hβ flux" is near zero; moving the window by 10 Å flips their sign. Where a decrement is defined, IIn values agree to 0.14 dex.</p></li>
+    <li><span class="chip warn">Data defect</span><h3>One corrupted template makes the extreme points</h3>
+      <p>The SN 1999br "+41 d" template drops to −240,000 across Hα (median flux ≈ 1). It produced the −10<sup>6</sup> EW and +10<sup>4</sup> ratio. SN 1987A "+44 d" and "+70 d" are one spectrum, and two SN 1998S templates have wavelengths in µm.</p></li>
+    <li><span class="chip warn">Phase axis</span><h3>Three phase conventions on one axis</h3>
+      <p>SN II phases count from discovery (SN 1987A's "day 1" is ~78 d before maximum), most IIn, IIb and SLSN phases from maximum, several IIn from discovery, and SN 1995N from a spurious catalogue date: its "+51 d" spectrum was taken 411 d after discovery.</p></li>
+    <li><span class="chip ok">Templates faithful</span><h3>The template bank matches the public data</h3>
+      <p>For 314 templates identified with their source spectrum, EW agrees to <span class="num">0.01 dex</span> and Hα/Hβ to <span class="num">0.03 dex</span>; the relative Hβ/Hα calibration differs by more than 0.1 dex in only 2 % of 275 pairs. The problems come from the measurement, not the templates.</p></li>
+  </ul>
+  <p class="prose muted" style="font-size:0.95rem">Presentation issues on top: the "SLSN-II" figures also contain the six SLSN-IIn objects (2006gy and five PTF10 SNe); OGLE-2013-SN-016 and -019 share one legend entry; the default symlog axis is linear between −2 and +2, which makes near-zero values look like a separate population; there are no units, uncertainties or extinction corrections.</p>
+</section>
+
+<section id="table">
+  <span class="eyebrow">Figure by figure</span>
+  <h2>Ten figures, point by point</h2>
+  <p class="prose">Each marker in the ten figures was digitized and matched to its template (1,069 of 1,100 markers; marker shapes agree 90–100 %). "Well-defined" means the spectrum passes every quality check: for EW, significant net emission with less than 30 % absorption and an uncompromised continuum; for Hα/Hβ, the same for both lines and no blend. Agreement is the median |log<sub>10</sub>(student / this work)| over those points.</p>
+  <div class="table-wrap">
+  <table>
+    <thead><tr><th>Figure</th><th class="r">Points</th><th class="r">Well-defined</th><th class="r">Agreement</th><th>Verdict</th><th>Main issue</th></tr></thead>
+    <tbody>
+      <tr><td>EW · SNIIn</td><td class="r num">172</td><td class="r num">116</td><td class="r num">0.08 dex</td><td><span class="chip ok">Validated</span></td><td>1998S at +13, +26 d too weak to sign; 1997eg wings truncated (~35 % low)</td></tr>
+      <tr><td>EW · SNII</td><td class="r num">137</td><td class="r num">83</td><td class="r num">0.27 dex</td><td><span class="chip bad">Not reproduced</span></td><td>|EW| 1.9× smaller; 11 positive (P-Cygni); −10<sup>6</sup> = corrupted template</td></tr>
+      <tr><td>EW · SNIIb</td><td class="r num">110</td><td class="r num">14</td><td class="r num">0.49 dex</td><td><span class="chip bad">Not meaningful</span></td><td>fast absorption reaches the continuum regions; late points measure [O I]</td></tr>
+      <tr><td>EW · SNIa-CSM</td><td class="r num">43</td><td class="r num">24</td><td class="r num">0.13 dex</td><td><span class="chip ok">Largely validated</span></td><td>—</td></tr>
+      <tr><td>EW · SLSN-II</td><td class="r num">67</td><td class="r num">40</td><td class="r num">0.10 dex</td><td><span class="chip ok">Largely validated</span></td><td>mixes SLSN-II and SLSN-IIn</td></tr>
+      <tr><td>Hα/Hβ · SNIIn</td><td class="r num">166</td><td class="r num">58</td><td class="r num">0.14 dex</td><td><span class="chip warn">Partly valid</span></td><td>108 not decrements, 15 negative; 1995N Hβ window holds [O III]</td></tr>
+      <tr><td>Hα/Hβ · SNII</td><td class="r num">159</td><td class="r num">10</td><td class="r num">—</td><td><span class="chip bad">Not valid</span></td><td>Hβ is a P-Cygni/Fe II blend; 47 negative, 12 beyond ±30</td></tr>
+      <tr><td>Hα/Hβ · SNIIb</td><td class="r num">108</td><td class="r num">1</td><td class="r num">—</td><td><span class="chip bad">Not valid</span></td><td>64 negative; the single formal value (0.28) is unphysical</td></tr>
+      <tr><td>Hα/Hβ · SNIa-CSM</td><td class="r num">41</td><td class="r num">0</td><td class="r num">—</td><td><span class="chip bad">Not valid</span></td><td>Hβ never significant emission; ±30–330 from F(Hβ) ≈ 0</td></tr>
+      <tr><td>Hα/Hβ · SLSN-II</td><td class="r num">66</td><td class="r num">8</td><td class="r num">—</td><td><span class="chip bad">Mostly not valid</span></td><td>22 negative</td></tr>
+    </tbody>
+  </table>
+  </div>
+</section>
+
+<section id="figures">
+  <span class="eyebrow">Compare</span>
+  <h2>The figures, side by side</h2>
+  <p class="prose">Left: the figure as received. Middle: the same templates re-measured here, with 16–84 % Monte-Carlo errors and flagged points in grey (ratios: valid Balmer decrements only, on a log axis, with Case B = 2.86). Right: the same measurement on the public spectra, phases from maximum light.</p>
+  <div class="tabs" role="tablist" aria-label="Choose a figure">
+    <div class="tabgroup"><span class="glabel">Hα EW</span>
+      <button class="tab" role="tab" id="t-ew-sniin" aria-controls="ew-sniin" aria-selected="true">SNIIn</button>
+      <button class="tab" role="tab" id="t-ew-snii" aria-controls="ew-snii" aria-selected="false">SNII</button>
+      <button class="tab" role="tab" id="t-ew-sniib" aria-controls="ew-sniib" aria-selected="false">SNIIb</button>
+      <button class="tab" role="tab" id="t-ew-sniacsm" aria-controls="ew-sniacsm" aria-selected="false">SNIa-CSM</button>
+      <button class="tab" role="tab" id="t-ew-slsnii" aria-controls="ew-slsnii" aria-selected="false">SLSN-II</button>
+    </div>
+    <div class="tabgroup"><span class="glabel">Hα/Hβ</span>
+      <button class="tab" role="tab" id="t-r-sniin" aria-controls="r-sniin" aria-selected="false">SNIIn</button>
+      <button class="tab" role="tab" id="t-r-snii" aria-controls="r-snii" aria-selected="false">SNII</button>
+      <button class="tab" role="tab" id="t-r-sniib" aria-controls="r-sniib" aria-selected="false">SNIIb</button>
+      <button class="tab" role="tab" id="t-r-sniacsm" aria-controls="r-sniacsm" aria-selected="false">SNIa-CSM</button>
+      <button class="tab" role="tab" id="t-r-slsnii" aria-controls="r-slsnii" aria-selected="false">SLSN-II</button>
+    </div>
+  </div>
+  <div id="panels"></div>
+</section>
+
+<section id="ratios">
+  <span class="eyebrow">Why the ratios fail</span>
+  <h2>A ratio of two signed integrals</h2>
+  <p class="prose">F(Hα)/F(Hβ) is a Balmer decrement only when both integrals are emission fluxes. In photospheric SN II and IIb spectra, and in SNe Ia-CSM, the Hβ window holds a P-Cygni profile blended with Fe II 4924, 5018 or the underlying SN Ia spectrum. Its continuum-subtracted integral scatters around zero, so the ratio takes any sign and size. With the student-style continuum, moving the window edge by 10 Å swings the SN II and Ia-CSM ratios between +10<sup>4</sup> and −10<sup>4</sup>, while a clean IIn line (SN 2010jl) stays at 4–7.</p>
+  <figure class="wide"><div class="plate"><img src="fig/window_sensitivity.png" alt="Left: student-style Hα EW versus integration half-width for six templates, all stable within a factor of two. Right: student-style Hα/Hβ versus half-width; SN II and Ia-CSM curves jump between large positive and negative values while SN 2010jl stays near 4 to 7." loading="lazy"></div>
+  <figcaption>Student-style measurement (global Chebyshev-3 continuum, 4000–7000 Å) as a function of the integration half-width.</figcaption></figure>
+</section>
+
+<section id="continuum">
+  <span class="eyebrow">Where the continuum goes</span>
+  <h2>Six spectra that show the failure modes</h2>
+  <figure class="wide"><div class="plate"><img src="fig/continuum_diagnostics.png" alt="Six template spectra around Hα (left) and Hβ (right) with three continuum definitions overplotted: a clean SN 2010jl line, an SN 2004dj plateau spectrum with Hβ in an Fe II forest, SN 1999E with Hβ near zero, pre-maximum SN 2008ax with deep fast absorption in the blue sideband, nebular SN 2008ax with [O I] 6300 next to Hα, and the corrupted SN 1999br template." loading="lazy"></div>
+  <figcaption><b>Blue:</b> sideband continuum used here. <b>Orange dashed:</b> SN pseudo-continuum. <b>Red dotted:</b> global Chebyshev-3, student-style. Rows from top: clean IIn line; SN II plateau, Hβ in an Fe II forest; Ia-CSM with Hβ ≈ 0; pre-maximum IIb whose −17,000 km/s absorption fills the blue continuum region; nebular IIb with [O I]; the corrupted 1999br template.</figcaption></figure>
+  <p class="prose">For SNe II and IIb the meaningful quantities are the absorption and emission pseudo-EWs and their ratio a/e (Gutiérrez et al. 2014). They are in the CSV output (<code>pc_*</code> columns).</p>
+</section>
+
+<section id="scatter">
+  <span class="eyebrow">All matched points</span>
+  <h2>Student value against this work</h2>
+  <figure class="wide"><div class="plate"><img src="fig/student_vs_thiswork.png" alt="Ten scatter panels, student value versus this work for the same template. EW panels for IIn, Ia-CSM and SLSN-II follow the one-to-one line; SN II and IIb EW and all ratio panels scatter widely, with most points flagged grey." loading="lazy"></div>
+  <figcaption>Blue: well-defined measurements. Grey: flagged. Both axes symlog with the student's linthresh of 2.</figcaption></figure>
+</section>
+
+<section id="bank">
+  <span class="eyebrow">The template bank</span>
+  <h2>Faithful to the public spectra, with a few defects</h2>
+  <div class="kpis">
+    <div class="kpi"><span class="v">314</span><span class="k">templates matched to their source spectrum (r &gt; 0.95)</span></div>
+    <div class="kpi"><span class="v">0.010 dex</span><span class="k">median EW difference, 153 clean pairs</span></div>
+    <div class="kpi"><span class="v">0.029 dex</span><span class="k">Hα/Hβ scatter, 38 valid pairs</span></div>
+    <div class="kpi"><span class="v">2 %</span><span class="k">pairs whose Hβ/Hα calibration differs by &gt; 0.1 dex</span></div>
+  </div>
+  <figure class="wide"><div class="plate"><img src="fig/template_vs_archive.png" alt="Four panels: (a) template phase offsets relative to discovery and to catalogue maximum, per SN; (b) template versus archive Hα EW on the one-to-one line; (c) template versus archive Hα/Hβ on the one-to-one line; (d) histogram of relative calibration differences centred on zero." loading="lazy"></div>
+  <figcaption>(a) phase zero-points per SN: on the horizontal line, phases count from maximum; on the vertical line, from discovery. (b, c) each template against the public spectrum it was made from. (d) relative Hβ/Hα flux calibration, template over archive.</figcaption></figure>
+  <figure class="wide"><div class="plate"><img src="fig/template_defects.png" alt="Left: the SN 1999br +41 d template reaching −240,000 across Hα. Middle: SN 1987A +44 d and +70 d templates overlapping exactly. Right: SN 2005cs +60 d and +61 d templates overlapping." loading="lazy"></div>
+  <figcaption>The corrupted SN 1999br template and two duplicate pairs.</figcaption></figure>
+  <div class="table-wrap">
+  <table>
+    <thead><tr><th>Template</th><th>Problem</th><th>Effect</th></tr></thead>
+    <tbody>
+      <tr><td class="mono">SNII/sn1999br.p0041</td><td>flux −240,000 … +53,000 over 6495–6653 Å; error column also ~10<sup>5</sup>, so Duperfit's weighted fits ignore it</td><td>EW −10<sup>6</sup>, Hα/Hβ +10<sup>4</sup> in the figures</td></tr>
+      <tr><td class="mono">SNII/sn1987A.p0044 = p0070</td><td>same spectrum (r = 0.99999)</td><td>one spectrum plotted at two phases</td></tr>
+      <tr><td class="mono">SNII/sn2005cs.p0060 ≈ p0061</td><td>near-identical (r = 0.9998, rescaled)</td><td>probably a duplicate</td></tr>
+      <tr><td class="mono">SNIIn/sn1998S.p0326, p0689</td><td>near-IR spectra stored in µm</td><td>outside the plots; break Duperfit fits</td></tr>
+      <tr><td class="mono">SNIIn/sn2006aa.p0041</td><td>no public counterpart (best r = 0.51); continuum bluer than Rayleigh–Jeans</td><td>Hα/Hβ = 0.6 vs. 2.2–2.6 in CSP spectra 3–7 d away</td></tr>
+      <tr><td class="mono">SNIIn/sn1995N.*</td><td>phases −276, −43, +51, +1791 d are the four public epochs counted from 1996-04-29, a spurious catalogue maximum</td><td>"+51 d" point is 411 d after discovery</td></tr>
+    </tbody>
+  </table>
+  </div>
+</section>
+
+<section id="phases">
+  <span class="eyebrow">Phase zero-points</span>
+  <h2>What "light-curve phase" means for each object</h2>
+  <p class="prose">Matching every template to its public spectrum gives its zero-point. The figures put all of these on one axis.</p>
+  <div class="table-wrap">
+  <table>
+    <thead><tr><th>Convention</th><th>Objects</th></tr></thead>
+    <tbody>
+      <tr><td>Days since discovery</td><td>SN II 1987A, 1999br, 1999em, 1999gi, 2004et, 2005cs, 2006bp, 2012aw, 2013am; IIn 1998S, 2005cp, 2005ip, 2006jd, 2006aa</td></tr>
+      <tr><td>Days since maximum (±2 d)</td><td>IIn 1996L, 1997eg, 1999eb, 2000P, 2003G, 2005db, 2005gl, 2007pk; IIb 2004ff, 2006el, 2008ax, 2008bo; SLSN-IIn 2006gy, PTF10tpz; Ia-CSM 2005gj</td></tr>
+      <tr><td>From a spurious catalogue date</td><td>IIn 1995N (1996-04-29, about one year after discovery)</td></tr>
+      <tr><td>Other or unclear</td><td>SN II 2004dj (+31 d from discovery), 2006ov (+89 d), 2009N (+7 d); IIb 1993J, 1998fa, 2000H (−9 to −21 d from catalogue maximum); Ia-CSM 2011km, 2012ca, 1999E; IIn 2010jl, 2015da</td></tr>
+    </tbody>
+  </table>
+  </div>
+</section>
+
+<section id="public">
+  <span class="eyebrow">Public spectra</span>
+  <h2>What the original data support</h2>
+  <p class="prose">The corrected measurements on all public spectra, with the trends for each class, are in the <a href="#results" data-goto="results">Results tab</a>. In short: the Hα |EW| of SNe IIn grows from about 100 Å near maximum to about 270 Å at 60–150 d, and their Balmer decrements (median 4.4) steepen with time; SNe Ia-CSM show no measurable Hβ emission; SNe II give decrements only within a week of maximum (median 2.2).</p>
+</section>
+
+<section id="recommend">
+  <span class="eyebrow">Recommendations</span>
+  <h2>For the next version of the analysis</h2>
+  <ul class="plain prose">
+    <li><b>Clean the inputs.</b> Drop or repair the defective templates above and de-duplicate before counting epochs.</li>
+    <li><b>Measure decrements only where they exist.</b> Use emission-dominated lines; fit and remove blends (He I 4922/5016, [O III] 4959/5007, Fe II 4924/5018) or fit narrow, intermediate and broad components; require both fluxes to be significant; never report a negative ratio. State the extinction treatment: E(B−V) = 0.3 changes Hα/Hβ by about 35 %.</li>
+    <li><b>Split P-Cygni lines.</b> For SNe II and IIb, report absorption and emission pseudo-EWs (a/e) instead of a net EW, and exclude nebular spectra where [O I] enters the Hα window.</li>
+    <li><b>One phase reference.</b> Put every object on explosion or maximum using the offsets in <code>results/template_phase_offsets.csv</code>.</li>
+    <li><b>Plot what is measured.</b> Log axes for positive quantities, uncertainties, units; SLSN-II and SLSN-IIn kept apart; legend names parsed correctly.</li>
+    <li><b>Test the choices.</b> Check every value's sensitivity to the window and continuum before reading trends into it. The Monte-Carlo in <code>bv/measure.py</code> does this.</li>
+  </ul>
+</section>
+
+<section id="limits">
+  <span class="eyebrow">Limits</span>
+  <h2>What this audit cannot settle</h2>
+  <ul class="plain prose">
+    <li>The student's code was not available. His values were read from the JPEG figures (axis calibration better than 0.5 px) and his exact windows could not be recovered: no variant of our reconstruction reproduces his SN II and IIb numbers.</li>
+    <li>The quality checks are deliberately conservative; component fitting could recover some flagged spectra. Host extinction is not corrected anywhere.</li>
+    <li>Only 302 of the 660 templates within −20…150 d (46 %; SLSN-II 17 %) have a public counterpart above r = 0.95. SN 2019gsp has no redshift on WISeREP and is not measured.</li>
+  </ul>
+</section>
+
+<section id="reproduce">
+  <span class="eyebrow">Reproduce</span>
+  <h2>Code and data products</h2>
+  <p class="prose">Everything is in <code>balmer_validation/</code> on the <code>claude/balmer-validation</code> branch: the <code>bv</code> package (template reader, both measurement methods, digitizer, archive parsers), the scripts, every CSV (one row per template, archive spectrum and digitized point), the figures and this page's source. With the Duperfit bank cloned from <a href="https://github.com/baerrito/duperfit">github.com/baerrito/duperfit</a>:</p>
+  <pre>BANK=/path/to/duperfit/tempbank/sne
+python -I scripts/measure_templates.py --bank $BANK --out results/templates_measurements.csv --dups results/template_duplicates.csv
+python -I scripts/digitize_student.py  --figdir figures/student --bank $BANK --out results/student_digitized.csv
+python -I scripts/compare_student.py   --meas results/templates_measurements.csv --dig results/student_digitized.csv --out results/student_vs_thiswork.csv
+python -I scripts/fetch_archive.py     --bank $BANK --outdir data/archive
+python -I scripts/measure_archive.py   --bank $BANK --archive data/archive --out results/archive_measurements.csv
+python -I scripts/match_templates_archive.py --bank $BANK --archive data/archive --out results/template_archive_matches.csv
+python -I scripts/make_figures.py      --bank $BANK --meas results/templates_measurements.csv --cmp results/student_vs_thiswork.csv --dups results/template_duplicates.csv --outdir figures
+python -I scripts/make_archive_figures.py --bank $BANK --ameas results/archive_measurements.csv --matches results/template_archive_matches.csv --tmeas results/templates_measurements.csv --outdir figures/archive
+python -I scripts/results_data.py      --ameas results/archive_measurements_phased.csv --out results/observed_results.json
+python -I scripts/page_data.py         --results results --out results/results_page_data.json
+python -I scripts/build_page.py        --template report_page/page.template.html --data results/results_page_data.json --out report_page/balmer_audit.html</pre>
+</section>
+
+</div>
+
+<div class="tabpanel" id="results" role="tabpanel" aria-labelledby="pt-results" hidden>
+
+<section id="res-intro">
+  <span class="eyebrow">Results · observed sample</span>
+  <h2>Hα strength and Balmer decrements across supernova classes</h2>
+  <p class="prose">Corrected measurements on every public spectrum of the 99 objects (OSC and WISeREP; 1,035 usable spectra between −20 and +150 d), with the method of this audit. Only reliable values appear: clean Hα emission equivalent widths and valid Balmer decrements. Spectra of one object from the same night are merged into one value, and population statistics count objects, not spectra: medians over objects in phase bins, and 95 % intervals from resampling objects. Phases are days from maximum light, or from discovery where the catalogue maximum is implausible (6 SNe IIn, 3 SNe Ia-CSM, and one SN II, IIb and SLSN-II).</p>
+  <nav class="classnav" aria-label="Jump to a class">
+    <span class="glabel">Interacting</span>
+    <a href="#res-SNIIn" data-goto="results" data-scroll="res-SNIIn" style="--cc: var(--c1)"><span class="sw"></span>SNe IIn</a>
+    <a href="#res-SLSN-II" data-goto="results" data-scroll="res-SLSN-II" style="--cc: var(--c2)"><span class="sw"></span>SLSN-II</a>
+    <a href="#res-SNIa-CSM" data-goto="results" data-scroll="res-SNIa-CSM" style="--cc: var(--c3)"><span class="sw"></span>SNe Ia-CSM</a>
+    <span class="glabel" style="margin-left:8px">Comparison</span>
+    <a href="#res-SNII" data-goto="results" data-scroll="res-SNII" style="--cc: var(--cg)"><span class="sw"></span>SNe II</a>
+    <a href="#res-SNIIb" data-goto="results" data-scroll="res-SNIIb" style="--cc: var(--cg)"><span class="sw sq"></span>SNe IIb</a>
+  </nav>
+</section>
+
+<section id="res-overview">
+  <span class="eyebrow">At a glance</span>
+  <h2>Interacting and non-interacting classes side by side</h2>
+  <div class="grid2">
+    <div class="chartcard">
+      <h3>Median Hα |EW| by phase</h3>
+      <p class="sub">Median over objects in each phase bin (bins with at least 3 objects). Hover for values.</p>
+      <div class="key" id="key-ov-ew"></div>
+      <div class="chart" id="ov-ew"></div>
+    </div>
+    <div class="chartcard">
+      <h3>Balmer decrement by class</h3>
+      <p class="sub">One dot per object-night; bar and value under each class: median. Triangles: lower limits for SNe Ia-CSM, whose Hβ is not detected.</p>
+      <div class="chart" id="ov-r"></div>
+    </div>
+  </div>
+  <ul class="findings">
+    <li><b>Hα strengthens with time only in the interacting classes.</b> From within ±20 d of maximum to 60–150 d, the median |EW| grows ×2.7 in SNe IIn (100 → 273 Å), ×3.2 in SLSN-II (27 → 89 Å) and ×2.6 in SNe Ia-CSM (101 → 258 Å). In normal SNe II it stays flat (165 → 136 Å).</li>
+    <li><b>SLSNe-II carry the weakest Hα for their continuum.</b> Near maximum their median |EW| is 27 Å, about a quarter of the SN IIn and Ia-CSM values at the same phase.</li>
+    <li><b>Balmer decrements separate the classes.</b> SNe IIn: median 4.4, two thirds of nights above Case B, steepening with time. SNe Ia-CSM: Hβ is not detected, and Hα/Hβ exceeds 10 on 81 % of nights against the local continuum. SNe II: 2.2, and only within a week of maximum.</li>
+  </ul>
+  <details class="box"><summary>Table: median |EW| per phase bin</summary><div class="inner" id="tbl-ov"></div></details>
+</section>
+
+<section id="res-SNIIn" class="clssec" data-cls="SNIIn">
+  <div class="clshead">
+    <span class="eyebrow">Interacting</span>
+    <h2 style="--cc: var(--c1)"><span class="sw"></span>SNe IIn</h2>
+    <p class="meta">37 objects with clean Hα EWs on 161 nights · 15 objects with Balmer decrements on 52 nights</p>
+  </div>
+  <ul class="findings">
+    <li><b>Hα grows relative to the continuum.</b> Median |EW| over objects: ≈ 80 Å before maximum, ≈ 100 Å at 0–20 d, ≈ 170 Å at 40–70 d, ≈ 270 Å at 70–100 d and ≈ 610 Å at 100–150 d. Within single objects, 17 of 22 rise (median +0.39 dex per 100 d, about ×2.4); pooled Spearman ρ = +0.51 (95 % interval 0.23 to 0.69). Dropping the six objects whose phases count from discovery leaves ρ = +0.44.</li>
+    <li><b>Early Hα strength differs widely between objects.</b> Near maximum |EW| spans about 20–1000 Å. Some objects are Hα-dominated from the start (1997eg ≈ 1000 Å, 2015da ≈ 340 Å, 2010jl ≈ 210 Å); others start weak and climb as the continuum fades (1998S 34 → 1340 Å, 2008fq 19 → 220 Å, 2000eo 35 → 130 Å).</li>
+    <li><b>Balmer decrements are mostly steeper than Case B.</b> Median 4.4 (interquartile 2.6–5.9, range 1.1–16); 67 % of nights lie above 2.86. Milky Way reddening changes them by at most 8 % (median 2 %). Host extinction is not corrected and would lower them.</li>
+    <li><b>Decrements steepen after maximum.</b> About 2.7 within ±20 d of maximum (12 objects), 4.4 after 40 d (7 objects) and 6–8 beyond 70 d; ρ(phase) = +0.49 (0.13 to 0.75). Five of the six objects with three or more epochs steepen: 2015da 4.7 → 13.5, 1997eg 5.2 → 8.3, 2010jl 2.9 → 4.3, 2006aa 2.2 → 2.6 and LSQ12hxg 1.1 → 1.3; 1999eb stays near 2.7.</li>
+    <li><b>Flat decrements are rare.</b> Only LSQ12hxg stays below 2 (1.1–1.3), the regime expected where Hα is optically thick in very dense gas (Drake &amp; Ulrich 1980). Steep and steepening decrements point to collisional excitation in dense gas, growing internal extinction, or both; dust formation has been reported in SN 2010jl (Gall et al. 2014).</li>
+    <li><b>Decrement against Hα strength is only suggestive.</b> Nights with larger |EW| have steeper decrements (ρ = +0.59), but most of this is the shared trend with phase: at fixed phase the correlation is +0.43 (−0.27 to 0.86), and between objects it is +0.46 (p = 0.09, 15 objects).</li>
+  </ul>
+  <div class="controls"><label for="hl-SNIIn" class="muted">Highlight an object</label><select id="hl-SNIIn"></select></div>
+  <div class="grid2">
+    <div class="chartcard"><h3>Hα |EW|</h3><div class="key ckey"></div><div class="chart" id="ch-e-SNIIn" style="--cc: var(--c1)"></div></div>
+    <div class="chartcard"><h3>Balmer decrement F(Hα)/F(Hβ)</h3><div class="key ckey"></div><div class="chart" id="ch-r-SNIIn" style="--cc: var(--c1)"></div></div>
+  </div>
+  <details class="box"><summary>Data table: SNe IIn</summary><div class="inner" id="tbl-SNIIn"></div></details>
+  <details class="box"><summary>Same measurement on the Duperfit templates</summary><div class="inner">
+    <p class="muted" style="font-size:0.9rem">Templates are copies of public spectra (EW agrees to 0.01 dex), but their phases follow the bank's mixed conventions. Grey points are flagged.</p>
+    <div class="grid2"><figure><div class="plate"><img src="fig/corrected/EW_SNIIn_corrected.png" alt="Hα EW of the Duperfit SN IIn templates, re-measured" loading="lazy"></div></figure><figure><div class="plate"><img src="fig/corrected/R_SNIIn_corrected.png" alt="Valid Balmer decrements of the Duperfit SN IIn templates" loading="lazy"></div></figure></div>
+  </div></details>
+</section>
+
+<section id="res-SLSN-II" class="clssec" data-cls="SLSN-II">
+  <div class="clshead">
+    <span class="eyebrow">Interacting</span>
+    <h2 style="--cc: var(--c2)"><span class="sw"></span>SLSN-II</h2>
+    <p class="meta">10 objects with clean Hα EWs on 30 nights, including SLSN-IIn 2006gy · Balmer decrements for 1 object (3 nights)</p>
+  </div>
+  <ul class="findings">
+    <li><b>Weakest Hα relative to the continuum.</b> Median |EW| is about 27 Å within ±20 d of maximum (6 objects), about a quarter of the SN IIn value at the same phase.</li>
+    <li><b>Hα strengthens as the continuum fades.</b> About 90 Å at 60–150 d (4 objects), ×3.2; ρ(phase) = +0.52 (0.07 to 0.85). All three objects with three or more epochs rise: 2008es 13 → 126 Å over 78 d, 2006gy 29 → 62 Å over 142 d, 2008am 5 → 7 Å over 22 d.</li>
+    <li><b>No class decrement yet.</b> Only SN 2008am gives valid values (2.1, 2.3 and 0.8 within about 20 d of maximum). The five PTF SLSNe-IIn have one public spectrum each, none with a clean Hα measurement.</li>
+  </ul>
+  <div class="controls"><label for="hl-SLSN-II" class="muted">Highlight an object</label><select id="hl-SLSN-II"></select></div>
+  <div class="grid2">
+    <div class="chartcard"><h3>Hα |EW|</h3><div class="key ckey"></div><div class="chart" id="ch-e-SLSN-II" style="--cc: var(--c2)"></div></div>
+    <div class="chartcard"><h3>Balmer decrement F(Hα)/F(Hβ)</h3><div class="key ckey"></div><div class="chart" id="ch-r-SLSN-II" style="--cc: var(--c2)"></div></div>
+  </div>
+  <details class="box"><summary>Data table: SLSN-II</summary><div class="inner" id="tbl-SLSN-II"></div></details>
+  <details class="box"><summary>Same measurement on the Duperfit templates</summary><div class="inner">
+    <p class="muted" style="font-size:0.9rem">Includes Duperfit's separate SLSN-IIn folder, as in the student's figures. Grey points are flagged.</p>
+    <div class="grid2"><figure><div class="plate"><img src="fig/corrected/EW_SLSN-II_corrected.png" alt="Hα EW of the Duperfit SLSN-II templates, re-measured" loading="lazy"></div></figure><figure><div class="plate"><img src="fig/corrected/R_SLSN-II_corrected.png" alt="Valid Balmer decrements of the Duperfit SLSN-II templates" loading="lazy"></div></figure></div>
+  </div></details>
+</section>
+
+<section id="res-SNIa-CSM" class="clssec" data-cls="SNIa-CSM">
+  <div class="clshead">
+    <span class="eyebrow">Interacting</span>
+    <h2 style="--cc: var(--c3)"><span class="sw"></span>SNe Ia-CSM</h2>
+    <p class="meta">6 objects with clean Hα EWs on 36 nights · no valid Balmer decrement; lower limits on 32 nights</p>
+  </div>
+  <ul class="findings">
+    <li><b>The tightest growth of Hα with time.</b> Median |EW| is about 100 Å within ±20 d (5 objects) and 260 Å at 60–150 d (4 objects); ρ(phase) = +0.80 (0.40 to 0.88), the strongest correlation of any class. All four objects with three or more epochs rise: 2011km 53 → 247 Å, 2012ca 192 → 497 Å, 2017eby 102 → 162 Å and 1999E 234 → 288 Å.</li>
+    <li><b>Hβ is not detected as an emission line.</b> In none of the 54 spectra covering both lines is Hβ significant net emission, and in 21 it is net absorption. Against the local continuum, Hα/Hβ exceeds 10 on 81 % of nights and Case B on all of them (median lower limit about 20): decrements far steeper than in SNe IIn.</li>
+    <li><b>The limits depend on the continuum.</b> Hβ sits on the Fe-dominated SN Ia spectrum, so a value needs that spectrum modelled and removed. Sharma et al. (2023) report decrements of about 7 with a different method.</li>
+  </ul>
+  <div class="controls"><label for="hl-SNIa-CSM" class="muted">Highlight an object</label><select id="hl-SNIa-CSM"></select></div>
+  <div class="grid2">
+    <div class="chartcard"><h3>Hα |EW|</h3><div class="key ckey"></div><div class="chart" id="ch-e-SNIa-CSM" style="--cc: var(--c3)"></div></div>
+    <div class="chartcard"><h3>Balmer decrement F(Hα)/F(Hβ): lower limits</h3><div class="key ckey"></div><div class="chart" id="ch-r-SNIa-CSM" style="--cc: var(--c3)"></div></div>
+  </div>
+  <details class="box"><summary>Data table: SNe Ia-CSM</summary><div class="inner" id="tbl-SNIa-CSM"></div></details>
+  <details class="box"><summary>Same measurement on the Duperfit templates</summary><div class="inner">
+    <p class="muted" style="font-size:0.9rem">Grey points are flagged. No template yields a valid decrement.</p>
+    <div class="grid2"><figure><div class="plate"><img src="fig/corrected/EW_SNIa-CSM_corrected.png" alt="Hα EW of the Duperfit SN Ia-CSM templates, re-measured" loading="lazy"></div></figure><figure><div class="plate"><img src="fig/corrected/R_SNIa-CSM_corrected.png" alt="Balmer decrement panel for the Duperfit SN Ia-CSM templates, empty" loading="lazy"></div></figure></div>
+  </div></details>
+</section>
+
+<div class="divider">Comparison: non-interacting classes</div>
+
+<section id="res-SNII" class="clssec" data-cls="SNII">
+  <div class="clshead">
+    <span class="eyebrow">Comparison</span>
+    <h2 style="--cc: var(--cg)"><span class="sw"></span>SNe II</h2>
+    <p class="meta">11 objects with clean Hα EWs on 114 nights · Balmer decrements for 3 objects within a week of maximum</p>
+  </div>
+  <ul class="findings">
+    <li><b>No growth of Hα relative to the continuum.</b> Median |EW| stays at about 110–180 Å from −20 to +150 d; ρ(phase) = −0.05 (−0.24 to 0.18). Per-object slopes scatter around zero (median +0.09 dex per 100 d); the three that rise (1987A, 2004dj, 2009N) are sampled as their photospheric phase ends.</li>
+    <li><b>Flat decrements near maximum only.</b> Eleven nights of 1999em, 2002gd and 2005cs within a week of maximum: median 2.2 (interquartile 1.7–2.8), 27 % above Case B. These lines form near the photosphere, so this is not a recombination value; later Hβ turns into P-Cygni absorption blended with Fe II.</li>
+    <li><b>The contrast with interacting events.</b> The ×2.6–3.2 growth of |EW| seen in all three interacting classes is absent here.</li>
+  </ul>
+  <div class="controls"><label for="hl-SNII" class="muted">Highlight an object</label><select id="hl-SNII"></select></div>
+  <div class="grid2">
+    <div class="chartcard"><h3>Hα |EW|</h3><div class="key ckey"></div><div class="chart" id="ch-e-SNII" style="--cc: var(--muted)"></div></div>
+    <div class="chartcard"><h3>Balmer decrement F(Hα)/F(Hβ)</h3><div class="key ckey"></div><div class="chart" id="ch-r-SNII" style="--cc: var(--muted)"></div></div>
+  </div>
+  <details class="box"><summary>Data table: SNe II</summary><div class="inner" id="tbl-SNII"></div></details>
+  <details class="box"><summary>Same measurement on the Duperfit templates</summary><div class="inner">
+    <p class="muted" style="font-size:0.9rem">SN II template phases count from discovery. Grey points are flagged.</p>
+    <div class="grid2"><figure><div class="plate"><img src="fig/corrected/EW_SNII_corrected.png" alt="Hα EW of the Duperfit SN II templates, re-measured" loading="lazy"></div></figure><figure><div class="plate"><img src="fig/corrected/R_SNII_corrected.png" alt="Valid Balmer decrements of the Duperfit SN II templates" loading="lazy"></div></figure></div>
+  </div></details>
+</section>
+
+<section id="res-SNIIb" class="clssec" data-cls="SNIIb">
+  <div class="clshead">
+    <span class="eyebrow">Comparison</span>
+    <h2 style="--cc: var(--cg)"><span class="sw sq"></span>SNe IIb</h2>
+    <p class="meta">6 objects with clean Hα EWs on 18 nights · one formal Balmer decrement</p>
+  </div>
+  <ul class="findings">
+    <li><b>Hα EW is rarely well defined.</b> Before maximum the fast Hα absorption fills the continuum region; after about 60 d [O I] 6300,6364 enters the window. Only 18 clean nights, too few for a trend (ρ = −0.05).</li>
+    <li><b>No usable decrement.</b> The single formally valid value (1993J, 0.26) comes from a broad continuum hump in the Hβ window.</li>
+  </ul>
+  <div class="controls"><label for="hl-SNIIb" class="muted">Highlight an object</label><select id="hl-SNIIb"></select></div>
+  <div class="grid2">
+    <div class="chartcard"><h3>Hα |EW|</h3><div class="key ckey"></div><div class="chart" id="ch-e-SNIIb" style="--cc: var(--muted)"></div></div>
+    <div class="chartcard"><h3>Balmer decrement F(Hα)/F(Hβ)</h3><div class="key ckey"></div><div class="chart" id="ch-r-SNIIb" style="--cc: var(--muted)"></div></div>
+  </div>
+  <details class="box"><summary>Data table: SNe IIb</summary><div class="inner" id="tbl-SNIIb"></div></details>
+  <details class="box"><summary>Same measurement on the Duperfit templates</summary><div class="inner">
+    <p class="muted" style="font-size:0.9rem">Grey points are flagged; most IIb spectra are.</p>
+    <div class="grid2"><figure><div class="plate"><img src="fig/corrected/EW_SNIIb_corrected.png" alt="Hα EW of the Duperfit SN IIb templates, re-measured" loading="lazy"></div></figure><figure><div class="plate"><img src="fig/corrected/R_SNIIb_corrected.png" alt="Balmer decrement panel for the Duperfit SN IIb templates" loading="lazy"></div></figure></div>
+  </div></details>
+</section>
+
+<section id="res-notes">
+  <span class="eyebrow">How to read these numbers</span>
+  <h2>Caveats</h2>
+  <ul class="plain prose">
+    <li>Samples are small and heterogeneous: what the archives happen to hold, with uneven phase coverage. Treat the 95 % intervals, which resample objects, as the honest uncertainty, not the per-spectrum errors.</li>
+    <li>Decrements are not corrected for host extinction; Milky Way reddening is at most an 8 % effect here.</li>
+    <li>Values are full-line integrals over ±10,000 km/s. Narrow and intermediate CSM components are not separated, so decrements of individual components can differ.</li>
+    <li>Phases from discovery (marked in the data tables) are offset from maximum by an unknown amount, usually a few weeks or less.</li>
+  </ul>
+</section>
+
+</div>
+
+<footer>
+  <p>References: Baer 2024, Duperfit v0.1.0, doi:10.5281/zenodo.10992738 · Drake &amp; Ulrich 1980, ApJS 42, 351 · Gall et al. 2014, Nature 511, 326 · Gutiérrez et al. 2014, ApJL 786, L15 · Guillochon et al. 2017, ApJ 835, 64 (Open Supernova Catalog) · Sharma et al. 2023, ApJ 948, 52 · Silverman et al. 2013, ApJS 207, 3 · Wagle, Chatzopoulos &amp; Baer 2025, ApJ 978, 112 · Yaron &amp; Gal-Yam 2012, PASP 124, 668 (WISeREP).</p>
+</footer>
+</main>
+
+<script type="application/json" id="results-data">__RESULTS_DATA__</script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.9.0/d3.min.js"></script>
+<script>
+(function () {
+  "use strict";
+
+  /* ---------------- validation tab: figure viewer ---------------- */
+  var FIGS = [
+    {id: "ew-sniin", q: "EW", cls: "SNIIn", note: "Validated for well-defined spectra (116 of 172 points, median 0.08 dex). Exceptions: SN 1998S at +13 and +26 d, where the lines are too weak for the sign of the EW to be determined, and the broad-winged SN 1997eg, whose |EW| a fixed window underestimates by about a third. The −10⁴ Å point (SN 1995N) is a genuine EW but taken 411 d after discovery."},
+    {id: "ew-snii", q: "EW", cls: "SNII", note: "Not reproduced. The student's |EW| are a median 1.9× smaller than ours; the 11 positive values are absorption-dominated P-Cygni profiles; the −10⁶ Å point is the corrupted SN 1999br template. Phases here count from discovery, not maximum."},
+    {id: "ew-sniib", q: "EW", cls: "SNIIb", note: "Not meaningful as plotted: only 14 of 110 points are clean emission-line EWs. Before maximum the fast Hα absorption fills the blue continuum region; after ~60 d the window measures [O I] 6300,6364 (grey points at the top)."},
+    {id: "ew-sniacsm", q: "EW", cls: "SNIa-CSM", note: "Largely validated (24 of 43 points well-defined, median 0.13 dex)."},
+    {id: "ew-slsnii", q: "EW", cls: "SLSN-II", note: "Largely validated (40 of 67 points well-defined, median 0.10 dex). The class includes the six SLSN-IIn templates."},
+    {id: "r-sniin", q: "R", cls: "SNIIn", note: "Partly valid: 58 of 166 ratios are Balmer decrements and agree with ours to 0.14 dex; the other 108 (15 of them negative) are not. The middle panel shows only the valid ones (61 templates), between 0.6 and 16."},
+    {id: "r-snii", q: "R", cls: "SNII", note: "Not valid: Hβ is a P-Cygni absorption blended with Fe II, so its net flux is near zero. 47 ratios are negative and 12 exceed ±30. Valid decrements exist only in the first two weeks after discovery (12 templates) and in one nebular SN 2005cs spectrum."},
+    {id: "r-sniib", q: "R", cls: "SNIIb", note: "Not valid: 64 of 108 ratios are negative. The single formally valid value (SN 1993J −18 d, 0.28) is a continuum undulation, not an emission line."},
+    {id: "r-sniacsm", q: "R", cls: "SNIa-CSM", note: "Not valid: Hβ is never significant net emission over the line profile, so the plotted values of ±30–330 are F(Hβ) ≈ 0 artefacts. No template or public spectrum yields a valid full-profile decrement."},
+    {id: "r-slsnii", q: "R", cls: "SLSN-II", note: "Mostly not valid: 8 of 66 are decrements; 22 are negative."}
+  ];
+  var LABEL = {EW: "Hα equivalent width", R: "Hα/Hβ"};
+  var stu = function (f) { return "fig/student/" + f.q + "_" + f.cls + ".jpg"; };
+  var cor = function (f) { return "fig/corrected/" + f.q + "_" + f.cls + "_corrected.png"; };
+  var arc = function (f) { return "fig/archive/" + f.q + "_" + f.cls + "_archive.png"; };
+  var host = document.getElementById("panels");
+  FIGS.forEach(function (f, i) {
+    var p = document.createElement("div");
+    p.className = "panel"; p.id = f.id; p.setAttribute("role", "tabpanel");
+    p.setAttribute("aria-labelledby", "t-" + f.id);
+    if (i !== 0) p.hidden = true;
+    var lbl = LABEL[f.q] + ", " + f.cls;
+    p.innerHTML =
+      '<p class="note"><b>' + lbl + '.</b> ' + f.note + '</p>' +
+      '<div class="triplet">' +
+      '<figure><div class="plate"><img src="' + stu(f) + '" alt="Student figure: ' + lbl + '" ' + (i ? 'loading="lazy"' : '') + '></div><figcaption><b>As received.</b> Student figure.</figcaption></figure>' +
+      '<figure><div class="plate"><img src="' + cor(f) + '" alt="Re-measured on the same templates: ' + lbl + '" ' + (i ? 'loading="lazy"' : '') + '></div><figcaption><b>Same templates, re-measured.</b> Grey points flagged.</figcaption></figure>' +
+      '<figure><div class="plate"><img src="' + arc(f) + '" alt="Measured on public spectra: ' + lbl + '" ' + (i ? 'loading="lazy"' : '') + '></div><figcaption><b>Public spectra</b> (OSC, WISeREP).</figcaption></figure>' +
+      '</div>';
+    host.appendChild(p);
+  });
+  var figtabs = Array.prototype.slice.call(document.querySelectorAll("#figures .tab"));
+  function selectFig(id) {
+    figtabs.forEach(function (t) {
+      var on = t.getAttribute("aria-controls") === id;
+      t.setAttribute("aria-selected", on ? "true" : "false");
+      t.tabIndex = on ? 0 : -1;
+    });
+    FIGS.forEach(function (f) { document.getElementById(f.id).hidden = (f.id !== id); });
+  }
+  figtabs.forEach(function (t, k) {
+    t.addEventListener("click", function () { selectFig(t.getAttribute("aria-controls")); });
+    t.addEventListener("keydown", function (e) {
+      if (e.key === "ArrowRight" || e.key === "ArrowLeft") {
+        var n = figtabs[(k + (e.key === "ArrowRight" ? 1 : figtabs.length - 1)) % figtabs.length];
+        n.focus(); selectFig(n.getAttribute("aria-controls"));
+      }
+    });
+  });
+  selectFig("ew-sniin");
+
+  /* ---------------- page tabs ---------------- */
+  var ptabs = Array.prototype.slice.call(document.querySelectorAll(".ptab"));
+  var pages = {validation: document.getElementById("validation"), results: document.getElementById("results")};
+  function showPage(id, scrollTo) {
+    ptabs.forEach(function (t) {
+      var on = t.getAttribute("aria-controls") === id;
+      t.setAttribute("aria-selected", on ? "true" : "false");
+      t.tabIndex = on ? 0 : -1;
+    });
+    Object.keys(pages).forEach(function (k) { pages[k].hidden = (k !== id); });
+    if (id === "results") renderResults();
+    if (scrollTo) {
+      var el = document.getElementById(scrollTo);
+      if (el) el.scrollIntoView({block: "start"});
+    }
+  }
+  ptabs.forEach(function (t, k) {
+    t.addEventListener("click", function () { showPage(t.getAttribute("aria-controls")); });
+    t.addEventListener("keydown", function (e) {
+      if (e.key === "ArrowRight" || e.key === "ArrowLeft") {
+        var n = ptabs[(k + 1) % ptabs.length];
+        n.focus(); showPage(n.getAttribute("aria-controls"));
+      }
+    });
+  });
+  document.addEventListener("click", function (e) {
+    var a = e.target && e.target.closest ? e.target.closest("a[data-goto]") : null;
+    if (!a) return;
+    e.preventDefault();
+    showPage(a.getAttribute("data-goto"), a.getAttribute("data-scroll"));
+  });
+
+  /* ---------------- results tab ---------------- */
+  var DATA = JSON.parse(document.getElementById("results-data").textContent);
+  var CLASSES = [
+    {k: "SNIIn", label: "SNe IIn", cc: "var(--c1)", inter: true, shape: "circle"},
+    {k: "SLSN-II", label: "SLSN-II", cc: "var(--c2)", inter: true, shape: "circle"},
+    {k: "SNIa-CSM", label: "SNe Ia-CSM", cc: "var(--c3)", inter: true, shape: "circle"},
+    {k: "SNII", label: "SNe II", cc: "var(--cg)", inter: false, shape: "circle", line: "var(--muted)"},
+    {k: "SNIIb", label: "SNe IIb", cc: "var(--cg)", inter: false, shape: "square", line: "var(--muted)"}
+  ];
+  var XT = [-20, 0, 20, 40, 60, 80, 100, 120, 140];
+
+  function snName(n) { return /^\d{4}/.test(n) ? "SN " + n : n; }
+  function fmtV(v) { return v >= 100 ? String(Math.round(v)) : v >= 10 ? v.toFixed(1) : v.toFixed(2); }
+  function fmtPh(p) { return (p >= 0 ? "+" : "−") + Math.abs(p).toFixed(0) + " d"; }
+  function median(a) { var s = a.slice().sort(function (x, y) { return x - y; }); var n = s.length; return n ? (n % 2 ? s[(n - 1) / 2] : 0.5 * (s[n / 2 - 1] + s[n / 2])) : NaN; }
+  function hash(str) { var h = 2166136261; for (var i = 0; i < str.length; i++) { h ^= str.charCodeAt(i); h = Math.imul(h, 16777619); } return ((h >>> 0) % 10000) / 10000; }
+
+  var tip = document.createElement("div");
+  tip.className = "tip"; tip.hidden = true; tip.setAttribute("role", "status");
+  document.body.appendChild(tip);
+  function showTip(ev, rows) {
+    while (tip.firstChild) tip.removeChild(tip.firstChild);
+    rows.forEach(function (r) {
+      var el = document.createElement("div");
+      if (r.key) {
+        el.className = "row";
+        var k = document.createElement("span"); k.className = "lk"; k.style.setProperty("--cc", r.key);
+        el.appendChild(k);
+        var t = document.createElement("span"); t.textContent = r.text; el.appendChild(t);
+      } else {
+        el.className = r.cls || "";
+        el.textContent = r.text;
+      }
+      tip.appendChild(el);
+    });
+    tip.hidden = false;
+    var pad = 14, w = tip.offsetWidth, h = tip.offsetHeight;
+    var x = ev.pageX + pad, y = ev.pageY + pad;
+    var maxX = window.scrollX + document.documentElement.clientWidth - 8;
+    if (x + w > maxX) x = ev.pageX - pad - w;
+    if (y + h > window.scrollY + window.innerHeight - 8) y = ev.pageY - pad - h;
+    tip.style.left = Math.max(window.scrollX + 4, x) + "px";
+    tip.style.top = y + "px";
+  }
+  function hideTip() { tip.hidden = true; }
+
+  function axes(svg, x, y, ticks, W, H, m, ytitle, xtitle) {
+    var g = svg.append("g").attr("class", "grid");
+    ticks.forEach(function (t) { g.append("line").attr("x1", m.l).attr("x2", W - m.r).attr("y1", y(t)).attr("y2", y(t)); });
+    var ya = svg.append("g").attr("class", "axis");
+    ticks.forEach(function (t) {
+      ya.append("text").attr("x", m.l - 8).attr("y", y(t)).attr("dy", "0.32em").attr("text-anchor", "end").text(String(t));
+    });
+    ya.append("text").attr("class", "atitle").attr("text-anchor", "middle")
+      .attr("transform", "translate(13," + ((m.t + H - m.b) / 2) + ") rotate(-90)").text(ytitle);
+    if (x) {
+      var xa = svg.append("g").attr("class", "axis").attr("transform", "translate(0," + (H - m.b) + ")");
+      xa.append("line").attr("x1", m.l).attr("x2", W - m.r);
+      XT.forEach(function (t) {
+        if (x(t) < m.l - 1 || x(t) > W - m.r + 1) return;
+        xa.append("line").attr("x1", x(t)).attr("x2", x(t)).attr("y1", 0).attr("y2", 4);
+        xa.append("text").attr("x", x(t)).attr("y", 17).attr("text-anchor", "middle").text(String(t));
+      });
+      xa.append("text").attr("class", "atitle").attr("x", (m.l + W - m.r) / 2).attr("y", 35)
+        .attr("text-anchor", "middle").text(xtitle || "Days from maximum light");
+    }
+  }
+
+  function caseB(svg, y, W, m) {
+    svg.append("line").attr("class", "caseb").attr("x1", m.l).attr("x2", W - m.r).attr("y1", y(DATA.case_b)).attr("y2", y(DATA.case_b));
+    svg.append("text").attr("x", W - m.r - 4).attr("y", y(DATA.case_b) + 14).attr("text-anchor", "end").text("Case B 2.86");
+  }
+
+  function makeBus() {
+    var hover = null, sel = null, subs = [];
+    function emit() { var c = hover || sel; subs.forEach(function (f) { f(c); }); }
+    return {
+      hover: function (n) { if (n !== hover) { hover = n; emit(); } },
+      select: function (n) { sel = n || null; emit(); },
+      current: function () { return hover || sel; },
+      sub: function (f) { subs.push(f); }
+    };
+  }
+
+  /* per-class chart: q = "e" (|EW|) or "r" (decrement) */
+  function classChart(hostEl, cls, q, bus) {
+    var isE = q === "e";
+    var pts = DATA.points.filter(function (p) { return p.c === cls.k && p[q] != null; });
+    var lims = (!isE && cls.k === "SNIa-CSM") ? DATA.limits : [];
+    var binsAll = isE ? DATA.classes[cls.k].ew.bins : DATA.classes[cls.k].r.bins;
+    var bins = binsAll || [];
+    var dom = isE ? [3, 3000] : [0.2, 60];
+    var ticks = isE ? [3, 10, 30, 100, 300, 1000, 3000] : [0.3, 1, 3, 10, 30];
+    var svg = d3.select(hostEl).append("svg").attr("class", "viz").attr("role", "img");
+    var n_obj = new Set(pts.map(function (p) { return p.n; })).size;
+    var desc = cls.label + ": " + (isE ? "Hα equivalent width" : "Balmer decrement") + " versus phase, " +
+      pts.length + " object-nights of " + n_obj + " objects" + (lims.length ? ", plus " + lims.length + " lower limits" : "") + ".";
+    svg.attr("aria-label", desc);
+    var api = {};
+    api.draw = function () {
+      var W = Math.max(280, Math.floor(hostEl.clientWidth)), H = 330;
+      var m = {t: 12, r: 14, b: 46, l: 50};
+      svg.attr("width", W).attr("height", H).attr("viewBox", "0 0 " + W + " " + H);
+      svg.selectAll("*").remove();
+      var x = d3.scaleLinear().domain([-20, 150]).range([m.l, W - m.r]);
+      var y = d3.scaleLog().domain(dom).range([H - m.b, m.t]).clamp(true);
+      axes(svg, x, y, ticks, W, H, m, isE ? "|EW(Hα)| [Å]" : "F(Hα)/F(Hβ)");
+      if (!isE) caseB(svg, y, W, m);
+      if (bins.length >= 2) {
+        svg.append("path").attr("class", "band")
+          .attr("d", d3.area().x(function (b) { return x(b.mid); }).y0(function (b) { return y(b.q1); }).y1(function (b) { return y(b.q3); })(bins));
+      }
+      var tg = svg.append("g");
+      d3.group(pts, function (p) { return p.n; }).forEach(function (arr, name) {
+        if (arr.length < 2) return;
+        arr = arr.slice().sort(function (a, b) { return a.p - b.p; });
+        tg.append("path").datum({n: name}).attr("class", "track")
+          .attr("d", d3.line().x(function (p) { return x(p.p); }).y(function (p) { return y(p[q]); })(arr));
+      });
+      var eg = svg.append("g");
+      pts.forEach(function (p) {
+        var lo = p[q + "l"], hi = p[q + "h"];
+        if (lo == null || hi == null || !(lo > 0)) return;
+        eg.append("line").datum(p).attr("class", "err").attr("x1", x(p.p)).attr("x2", x(p.p))
+          .attr("y1", y(Math.max(lo, dom[0]))).attr("y2", y(Math.min(hi, dom[1])));
+      });
+      var mg = svg.append("g").attr("class", "medg");
+      if (bins.length >= 2) {
+        mg.append("path").attr("class", "med").style("stroke", cls.line || null)
+          .attr("d", d3.line().x(function (b) { return x(b.mid); }).y(function (b) { return y(b.med); })(bins));
+      }
+      mg.selectAll("circle").data(bins).join("circle").attr("class", "medpt").style("fill", cls.line || null)
+        .attr("cx", function (b) { return x(b.mid); }).attr("cy", function (b) { return y(b.med); }).attr("r", 4.5);
+      svg.append("g").selectAll("circle").data(pts).join("circle").attr("class", "dot")
+        .attr("cx", function (p) { return x(p.p); }).attr("cy", function (p) { return y(p[q]); }).attr("r", 4);
+      svg.append("g").selectAll("path").data(lims).join("path").attr("class", "lim")
+        .attr("transform", function (p) { return "translate(" + x(p.p) + "," + y(p.r) + ")"; })
+        .attr("d", d3.symbol(d3.symbolTriangle, 64)());
+      if (!pts.length && !lims.length) {
+        svg.append("text").attr("x", (m.l + W - m.r) / 2).attr("y", (m.t + H - m.b) / 2).attr("text-anchor", "middle").text("no valid measurement");
+      }
+      var all = pts.map(function (p) { return {p: p, x: x(p.p), y: y(p[q]), lim: false}; })
+        .concat(lims.map(function (p) { return {p: p, x: x(p.p), y: y(p.r), lim: true}; }));
+      var del = all.length ? d3.Delaunay.from(all, function (d) { return d.x; }, function (d) { return d.y; }) : null;
+      svg.append("rect").attr("class", "hit").attr("x", m.l).attr("y", m.t).attr("width", W - m.l - m.r).attr("height", H - m.t - m.b)
+        .on("pointermove", function (ev) {
+          if (!del) return;
+          var pt = d3.pointer(ev), i = del.find(pt[0], pt[1]), d = all[i];
+          if (!d || Math.hypot(d.x - pt[0], d.y - pt[1]) > 28) { bus.hover(null); hideTip(); return; }
+          bus.hover(d.p.n);
+          var p = d.p, rows = [];
+          if (d.lim) {
+            rows.push({cls: "v", text: "Hα/Hβ > " + fmtV(p.r)});
+            rows.push({cls: "l", text: "lower limit; Hβ not detected"});
+          } else if (isE) {
+            rows.push({cls: "v", text: "|EW| " + fmtV(p.e) + " Å"});
+            if (p.el != null && p.eh != null) rows.push({cls: "l", text: "16–84 %: " + fmtV(p.el) + "–" + fmtV(p.eh) + " Å"});
+          } else {
+            rows.push({cls: "v", text: "Hα/Hβ " + fmtV(p.r)});
+            if (p.rl != null && p.rh != null) rows.push({cls: "l", text: "16–84 %: " + fmtV(p.rl) + "–" + fmtV(p.rh)});
+          }
+          rows.push({cls: "", text: snName(p.n)});
+          var ref = d.lim ? "" : (p.ref === "discovery" ? " from discovery" : " from maximum");
+          rows.push({cls: "l", text: fmtPh(p.p) + ref + (p.k > 1 ? " · " + p.k + " spectra merged" : "") + (p.s ? " · " + p.s : "")});
+          showTip(ev, rows);
+        })
+        .on("pointerleave", function () { bus.hover(null); hideTip(); });
+      api.highlight(bus.current());
+    };
+    api.highlight = function (name) {
+      svg.classed("has-hl", !!name);
+      svg.selectAll(".dot,.err,.track,.lim").classed("is-hl", function (d) { return !!name && !!d && d.n === name; });
+    };
+    bus.sub(api.highlight);
+    return api;
+  }
+
+  function overviewEW(hostEl) {
+    var series = CLASSES.map(function (c) { return {c: c, bins: DATA.classes[c.k].ew.bins || []}; });
+    var svg = d3.select(hostEl).append("svg").attr("class", "viz").attr("role", "img")
+      .attr("aria-label", "Median Hα equivalent width by phase bin for five supernova classes. SNe IIn, SLSN-II and SNe Ia-CSM rise with phase; SNe II stay flat.");
+    var api = {};
+    api.draw = function () {
+      var W = Math.max(300, Math.floor(hostEl.clientWidth)), H = 330;
+      var m = {t: 12, r: 96, b: 46, l: 50};
+      svg.attr("width", W).attr("height", H).attr("viewBox", "0 0 " + W + " " + H);
+      svg.selectAll("*").remove();
+      var x = d3.scaleLinear().domain([-20, 150]).range([m.l, W - m.r]);
+      var y = d3.scaleLog().domain([10, 1000]).range([H - m.b, m.t]).clamp(true);
+      axes(svg, x, y, [10, 30, 100, 300, 1000], W, H, m, "median |EW(Hα)| [Å]");
+      var cross = svg.append("line").attr("class", "cross").attr("y1", m.t).attr("y2", H - m.b).style("display", "none");
+      series.slice().reverse().forEach(function (s) {
+        if (!s.bins.length) return;
+        var g = svg.append("g").style("--cc", s.c.cc);
+        if (s.bins.length >= 2) {
+          g.append("path").attr("class", "med")
+            .attr("d", d3.line().x(function (b) { return x(b.mid); }).y(function (b) { return y(b.med); })(s.bins));
+        }
+        if (s.c.shape === "square") {
+          g.selectAll("rect").data(s.bins).join("rect").attr("class", "cdot")
+            .attr("x", function (b) { return x(b.mid) - 4.5; }).attr("y", function (b) { return y(b.med) - 4.5; })
+            .attr("width", 9).attr("height", 9).attr("rx", 1.5);
+        } else {
+          g.selectAll("circle").data(s.bins).join("circle").attr("class", "cdot")
+            .attr("cx", function (b) { return x(b.mid); }).attr("cy", function (b) { return y(b.med); }).attr("r", 4.5);
+        }
+        if (s.c.inter) {
+          var last = s.bins[s.bins.length - 1];
+          g.append("text").attr("class", "dlab").attr("x", x(last.mid) + 9).attr("y", y(last.med)).attr("dy", "0.32em").text(s.c.label);
+        }
+      });
+      var mids = Array.from(new Set([].concat.apply([], series.map(function (s) { return s.bins.map(function (b) { return b.mid; }); })))).sort(function (a, b) { return a - b; });
+      svg.append("rect").attr("class", "hit").attr("x", m.l).attr("y", m.t).attr("width", W - m.l - m.r).attr("height", H - m.t - m.b)
+        .on("pointermove", function (ev) {
+          var px = d3.pointer(ev)[0], ph = x.invert(px), best = mids[0];
+          mids.forEach(function (mm) { if (Math.abs(mm - ph) < Math.abs(best - ph)) best = mm; });
+          cross.attr("x1", x(best)).attr("x2", x(best)).style("display", null);
+          var rows = [], lo = null, hi = null;
+          series.forEach(function (s) {
+            s.bins.forEach(function (b) { if (b.mid === best) { lo = b.lo; hi = b.hi; } });
+          });
+          rows.push({cls: "l", text: "Phase " + lo + " to " + hi + " d"});
+          series.map(function (s) {
+            var b = s.bins.filter(function (bb) { return bb.mid === best; })[0];
+            return b ? {s: s, b: b} : null;
+          }).filter(Boolean).sort(function (a, b) { return b.b.med - a.b.med; }).forEach(function (r) {
+            rows.push({key: r.s.c.cc, text: fmtV(r.b.med) + " Å  " + r.s.c.label + " (" + r.b.n + " objects)"});
+          });
+          showTip(ev, rows);
+        })
+        .on("pointerleave", function () { cross.style("display", "none"); hideTip(); });
+    };
+    return api;
+  }
+
+  function overviewR(hostEl) {
+    var svg = d3.select(hostEl).append("svg").attr("class", "viz").attr("role", "img")
+      .attr("aria-label", "Balmer decrements per object-night by class: SNe IIn median 4.4, SLSN-II 2.1, SNe II 2.2; SNe Ia-CSM lower limits median about 20; one SN IIb value.");
+    var api = {};
+    api.draw = function () {
+      var W = Math.max(300, Math.floor(hostEl.clientWidth)), H = 344;
+      var m = {t: 12, r: 14, b: 60, l: 50};
+      svg.attr("width", W).attr("height", H).attr("viewBox", "0 0 " + W + " " + H);
+      svg.selectAll("*").remove();
+      var xb = d3.scaleBand().domain(CLASSES.map(function (c) { return c.k; })).range([m.l, W - m.r]).paddingInner(0.18).paddingOuter(0.1);
+      var y = d3.scaleLog().domain([0.2, 60]).range([H - m.b, m.t]).clamp(true);
+      axes(svg, null, y, [0.3, 1, 3, 10, 30], W, H, m, "F(Hα)/F(Hβ)");
+      var xa = svg.append("g").attr("class", "axis").attr("transform", "translate(0," + (H - m.b) + ")");
+      xa.append("line").attr("x1", m.l).attr("x2", W - m.r);
+      CLASSES.forEach(function (c) {
+        var cx = xb(c.k) + xb.bandwidth() / 2;
+        var vals = DATA.points.filter(function (p) { return p.c === c.k && p.r != null; }).map(function (p) { return p.r; });
+        var lims = c.k === "SNIa-CSM" ? DATA.limits.map(function (p) { return p.r; }) : [];
+        var nl = lims.length ? lims.length + " limits" : "n = " + vals.length;
+        var src = lims.length ? lims : vals;
+        xa.append("text").attr("class", "atitle").attr("x", cx).attr("y", 18).attr("text-anchor", "middle").text(c.label);
+        xa.append("text").attr("x", cx).attr("y", 33).attr("text-anchor", "middle").text(nl);
+        if (src.length >= 3) {
+          xa.append("text").attr("x", cx).attr("y", 47).attr("text-anchor", "middle").text("med " + (lims.length ? "> " : "") + fmtV(median(src)));
+        }
+      });
+      caseB(svg, y, W, m);
+      var all = [];
+      CLASSES.forEach(function (c) {
+        var g = svg.append("g").style("--cc", c.cc);
+        var bw = xb.bandwidth(), x0 = xb(c.k);
+        var vals = DATA.points.filter(function (p) { return p.c === c.k && p.r != null; });
+        var lims = c.k === "SNIa-CSM" ? DATA.limits : [];
+        vals.forEach(function (p) {
+          var cx = x0 + bw / 2 + (hash(p.n + p.p) - 0.5) * bw * 0.62, cy = y(p.r);
+          var el = c.shape === "square"
+            ? g.append("rect").attr("x", cx - 4).attr("y", cy - 4).attr("width", 8).attr("height", 8).attr("rx", 1.5)
+            : g.append("circle").attr("cx", cx).attr("cy", cy).attr("r", 4);
+          el.attr("class", "cdot");
+          all.push({x: cx, y: cy, p: p, c: c, lim: false});
+        });
+        lims.forEach(function (p) {
+          var cx = x0 + bw / 2 + (hash(p.n + p.p) - 0.5) * bw * 0.62, cy = y(p.r);
+          g.append("path").attr("class", "lim").attr("transform", "translate(" + cx + "," + cy + ")").attr("d", d3.symbol(d3.symbolTriangle, 64)());
+          all.push({x: cx, y: cy, p: p, c: c, lim: true});
+        });
+        var src = lims.length ? lims.map(function (p) { return p.r; }) : vals.map(function (p) { return p.r; });
+        if (src.length >= 3) {
+          var md = median(src);
+          g.append("line").attr("class", "mtick").attr("x1", x0 + bw * 0.12).attr("x2", x0 + bw * 0.88).attr("y1", y(md)).attr("y2", y(md));
+        }
+      });
+      var del = d3.Delaunay.from(all, function (d) { return d.x; }, function (d) { return d.y; });
+      svg.append("rect").attr("class", "hit").attr("x", m.l).attr("y", m.t).attr("width", W - m.l - m.r).attr("height", H - m.t - m.b)
+        .on("pointermove", function (ev) {
+          var pt = d3.pointer(ev), i = del.find(pt[0], pt[1]), d = all[i];
+          if (!d || Math.hypot(d.x - pt[0], d.y - pt[1]) > 24) { hideTip(); return; }
+          var rows = [{cls: "v", text: (d.lim ? "Hα/Hβ > " : "Hα/Hβ ") + fmtV(d.p.r)}];
+          rows.push({key: d.c.cc, text: snName(d.p.n) + " · " + d.c.label});
+          rows.push({cls: "l", text: fmtPh(d.p.p) + (d.lim ? " · lower limit" : "")});
+          showTip(ev, rows);
+        })
+        .on("pointerleave", hideTip);
+    };
+    return api;
+  }
+
+  function el(tag, attrs, text) {
+    var e = document.createElement(tag);
+    if (attrs) Object.keys(attrs).forEach(function (k) { e.setAttribute(k, attrs[k]); });
+    if (text != null) e.textContent = text;
+    return e;
+  }
+  function table(headers, rows, numericCols) {
+    var wrap = el("div", {"class": "table-wrap"}), t = el("table", {"class": "dense"});
+    var thead = el("thead"), tr = el("tr");
+    headers.forEach(function (h, i) { tr.appendChild(el("th", numericCols.indexOf(i) >= 0 ? {"class": "r"} : null, h)); });
+    thead.appendChild(tr); t.appendChild(thead);
+    var tb = el("tbody");
+    rows.forEach(function (r) {
+      var row = el("tr");
+      r.forEach(function (v, i) { row.appendChild(el("td", numericCols.indexOf(i) >= 0 ? {"class": "r"} : null, v)); });
+      tb.appendChild(row);
+    });
+    t.appendChild(tb); wrap.appendChild(t);
+    return wrap;
+  }
+  function classTables(cls) {
+    var hostEl = document.getElementById("tbl-" + cls.k);
+    var pts = DATA.points.filter(function (p) { return p.c === cls.k; });
+    var lims = cls.k === "SNIa-CSM" ? DATA.limits : [];
+    var names = Array.from(new Set(pts.map(function (p) { return p.n; }).concat(lims.map(function (p) { return p.n; }))));
+    var cs = DATA.classes[cls.k];
+    var summary = names.map(function (n) {
+      var e = pts.filter(function (p) { return p.n === n && p.e != null; }).sort(function (a, b) { return a.p - b.p; });
+      var r = pts.filter(function (p) { return p.n === n && p.r != null; }).sort(function (a, b) { return a.p - b.p; });
+      var l = lims.filter(function (p) { return p.n === n; });
+      return {n: n, e: e, r: r, l: l};
+    }).sort(function (a, b) { return (b.e.length + b.r.length) - (a.e.length + a.r.length) || (a.n < b.n ? -1 : 1); });
+    var head = ["SN", "EW nights", "phase range", "|EW| first → last [Å]", "EW slope [dex/100 d]", "decrement nights", "median decrement"];
+    if (cls.k === "SNIa-CSM") head.push("median lower limit");
+    var rows = summary.map(function (o) {
+      var ph = o.e.length ? fmtPh(o.e[0].p) + " to " + fmtPh(o.e[o.e.length - 1].p) : "—";
+      var ew = o.e.length ? fmtV(o.e[0].e) + (o.e.length > 1 ? " → " + fmtV(o.e[o.e.length - 1].e) : "") : "—";
+      var sl = cs.ew.slopes[o.n] != null ? (cs.ew.slopes[o.n] >= 0 ? "+" : "−") + Math.abs(cs.ew.slopes[o.n]).toFixed(2) : "—";
+      var md = o.r.length ? fmtV(median(o.r.map(function (p) { return p.r; }))) : "—";
+      var row = [snName(o.n), String(o.e.length), ph, ew, sl, String(o.r.length), md];
+      if (cls.k === "SNIa-CSM") row.push(o.l.length ? "> " + fmtV(median(o.l.map(function (p) { return p.r; }))) : "—");
+      return row;
+    });
+    hostEl.appendChild(el("p", {"class": "muted", style: "font-size:0.88rem"}, "Per object. Slopes are fitted for objects with at least 3 nights over 20 d or more."));
+    hostEl.appendChild(table(head, rows, [1, 4, 5, 6, 7]));
+    var nights = pts.slice().sort(function (a, b) { return a.n < b.n ? -1 : a.n > b.n ? 1 : a.p - b.p; });
+    var nrows = nights.map(function (p) {
+      return [snName(p.n), fmtPh(p.p), p.ref, p.e != null ? fmtV(p.e) : "—", p.el != null ? fmtV(p.el) + "–" + fmtV(p.eh) : "—",
+        p.r != null ? fmtV(p.r) : "—", p.rl != null ? fmtV(p.rl) + "–" + fmtV(p.rh) : "—", String(p.k), p.s || ""];
+    });
+    hostEl.appendChild(el("p", {"class": "muted", style: "font-size:0.88rem"}, "Per night (16–84 % Monte-Carlo ranges)."));
+    hostEl.appendChild(table(["SN", "phase", "phase from", "|EW| [Å]", "range", "Hα/Hβ", "range", "spectra", "archive"], nrows, [1, 3, 4, 5, 6, 7]));
+    if (lims.length) {
+      var lrows = lims.slice().sort(function (a, b) { return a.n < b.n ? -1 : a.n > b.n ? 1 : a.p - b.p; })
+        .map(function (p) { return [snName(p.n), fmtPh(p.p), "> " + fmtV(p.r)]; });
+      hostEl.appendChild(el("p", {"class": "muted", style: "font-size:0.88rem"}, "Lower limits on Hα/Hβ against the local continuum."));
+      hostEl.appendChild(table(["SN", "phase", "Hα/Hβ"], lrows, [1, 2]));
+    }
+  }
+  function overviewTable() {
+    var hostEl = document.getElementById("tbl-ov");
+    var bins = [[-20, 0], [0, 20], [20, 40], [40, 70], [70, 100], [100, 150]];
+    var head = ["class"].concat(bins.map(function (b) { return b[0] + " to " + b[1] + " d"; }));
+    var rows = CLASSES.map(function (c) {
+      var bb = DATA.classes[c.k].ew.bins;
+      return [c.label].concat(bins.map(function (b) {
+        var hit = bb.filter(function (x) { return x.lo === b[0]; })[0];
+        return hit ? fmtV(hit.med) + " (" + hit.n + ")" : "—";
+      }));
+    });
+    hostEl.appendChild(el("p", {"class": "muted", style: "font-size:0.88rem"}, "Median |EW| in Å over objects (number of objects); bins with fewer than 3 objects are left out."));
+    hostEl.appendChild(table(head, rows, [1, 2, 3, 4, 5, 6]));
+  }
+  function keys() {
+    document.querySelectorAll(".clssec").forEach(function (sec) {
+      var cls = sec.getAttribute("data-cls");
+      sec.querySelectorAll(".ckey").forEach(function (k, i) {
+        var isR = i === 1;
+        var parts = [["dot", "one night of one SN"], ["line", "median over objects; band: middle 50 %"]];
+        if (isR && cls === "SNIa-CSM") parts = [["tri", "lower limit (Hβ not detected)"]];
+        parts.forEach(function (p) {
+          var s = document.createElement("span"); s.className = "k";
+          var svgNS = "http://www.w3.org/2000/svg", sv = document.createElementNS(svgNS, "svg");
+          sv.setAttribute("width", "16"); sv.setAttribute("height", "10"); sv.setAttribute("class", "viz");
+          var c;
+          if (p[0] === "dot") { c = document.createElementNS(svgNS, "circle"); c.setAttribute("cx", "8"); c.setAttribute("cy", "5"); c.setAttribute("r", "4"); c.setAttribute("class", "dot"); }
+          else if (p[0] === "line") { c = document.createElementNS(svgNS, "line"); c.setAttribute("x1", "1"); c.setAttribute("x2", "15"); c.setAttribute("y1", "5"); c.setAttribute("y2", "5"); c.setAttribute("class", "keyline"); }
+          else { c = document.createElementNS(svgNS, "path"); c.setAttribute("d", "M8,1 L13,9 L3,9 Z"); c.setAttribute("class", "lim"); }
+          sv.appendChild(c);
+          var chart = sec.querySelectorAll(".chart")[isR ? 1 : 0];
+          sv.style.setProperty("--cc", chart.style.getPropertyValue("--cc"));
+          s.appendChild(sv); s.appendChild(document.createTextNode(p[1]));
+          k.appendChild(s);
+        });
+      });
+    });
+    var ok = document.getElementById("key-ov-ew");
+    CLASSES.forEach(function (c) {
+      var s = document.createElement("span"); s.className = "k";
+      var sw = document.createElement("span"); sw.className = "sw" + (c.shape === "square" ? " sq" : ""); sw.style.setProperty("--cc", c.cc);
+      s.appendChild(sw); s.appendChild(document.createTextNode(c.label));
+      ok.appendChild(s);
+    });
+  }
+
+  var rendered = false, charts = [];
+  function renderResults() {
+    if (rendered) return;
+    rendered = true;
+    if (!window.d3) {
+      document.querySelectorAll("#results .chart").forEach(function (c) {
+        c.appendChild(el("p", {"class": "fallback"}, "The chart library could not load. The values are in the data tables below."));
+      });
+    } else {
+      charts.push({host: document.getElementById("ov-ew"), api: overviewEW(document.getElementById("ov-ew"))});
+      charts.push({host: document.getElementById("ov-r"), api: overviewR(document.getElementById("ov-r"))});
+      CLASSES.forEach(function (c) {
+        var bus = makeBus();
+        ["e", "r"].forEach(function (q) {
+          var h = document.getElementById("ch-" + q + "-" + c.k);
+          charts.push({host: h, api: classChart(h, c, q, bus)});
+        });
+        var sel = document.getElementById("hl-" + c.k);
+        var counts = {};
+        DATA.points.filter(function (p) { return p.c === c.k; }).forEach(function (p) { counts[p.n] = (counts[p.n] || 0) + 1; });
+        if (c.k === "SNIa-CSM") DATA.limits.forEach(function (p) { counts[p.n] = counts[p.n] || 0; });
+        sel.appendChild(el("option", {value: ""}, "All objects"));
+        Object.keys(counts).sort(function (a, b) { return counts[b] - counts[a] || (a < b ? -1 : 1); }).forEach(function (n) {
+          sel.appendChild(el("option", {value: n}, snName(n) + " (" + counts[n] + " nights)"));
+        });
+        sel.addEventListener("change", function () { bus.select(sel.value); });
+      });
+      charts.forEach(function (c) { c.api.draw(); });
+      if (window.ResizeObserver) {
+        var pending = null;
+        var ro = new ResizeObserver(function () {
+          if (pending) cancelAnimationFrame(pending);
+          pending = requestAnimationFrame(function () { charts.forEach(function (c) { if (c.host.clientWidth) c.api.draw(); }); });
+        });
+        charts.forEach(function (c) { ro.observe(c.host); });
+      }
+    }
+    keys();
+    overviewTable();
+    CLASSES.forEach(classTables);
+  }
+
+  function route() {
+    var h = (location.hash || "").replace("#", "");
+    if (h === "results" || h.indexOf("res-") === 0) showPage("results", h === "results" ? null : h);
+    else if (FIGS.some(function (f) { return f.id === h; })) { showPage("validation"); selectFig(h); }
+    else showPage("validation");
+  }
+  window.addEventListener("hashchange", route);
+  route();
+})();
+</script>
