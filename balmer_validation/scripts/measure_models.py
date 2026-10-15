@@ -26,7 +26,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."
 import numpy as np  # noqa: E402
 import pandas as pd  # noqa: E402
 
-from bv.measure import HALPHA, C_KMS, _noise, robust_measure  # noqa: E402
+from bv.measure import HALPHA, C_KMS, _noise, mask_narrow_lines, robust_measure  # noqa: E402
 from bv.models import find_spectra, load_spectrum, read_catalogue, resolve_epochs  # noqa: E402
 
 REPLICA_HW = (50, 100, 150, 200, 300)        # Å; paper recipe: Cheb-3 continuum over 4000-7000 Å
@@ -52,6 +52,10 @@ def _one(args):
     if near.sum() > 2:
         dl = float(np.median(np.diff(w[near])))
         row.update(dlam_Ha=dl, dv_Ha=dl / HALPHA * C_KMS)
+    from scipy.ndimage import median_filter
+    band = (w >= 3500) & (w <= 9000)
+    run_med = median_filter(fl, size=9, mode="nearest")
+    row["n_spikes_opt"] = int(np.sum(band & (fl > 20.0 * np.abs(run_med))))   # single-bin MC spikes
     opt = (w >= 4000) & (w <= 7000)
     if opt.any():
         row["frac_nonpos_opt"] = float(np.mean(fl[opt] <= 0))
@@ -61,6 +65,9 @@ def _one(args):
     row.update({f"rob_{k}": v for k, v in rb.items()})
     rn = robust_measure(w, fl, None, n_mc=n_mc, windows="narrow")
     row.update({f"robn_{k}": v for k, v in rn.items() if not k.startswith("pc_")})
+    # same measurement with the narrow non-Balmer lines masked (as for the observed spectra)
+    rm = robust_measure(w, mask_narrow_lines(w, fl), None, n_mc=n_mc)
+    row.update({f"robm_{k}": v for k, v in rm.items() if not k.startswith("pc_")})
     if do_replica:
         from bv.measure import replica_measure
         for hw in REPLICA_HW:
@@ -84,10 +91,10 @@ def _qa_plot(w, fl, row, qa_dir):
     for lam in (HBETA, HALPHA):
         axs[0].axvline(lam, c="0.6", lw=0.5)
     ew, r = row.get("rob_EW_net_Ha"), row.get("rob_R_net")
-    continuum_diagnostic(axs[1], w, fl, HBETA, "Hβ", show_replica=_replica_available())
+    continuum_diagnostic(axs[1], w, fl, HBETA, "Hβ", show_replica=_replica_available(), label="model")
     continuum_diagnostic(axs[2], w, fl, HALPHA, f"Hα  EW={ew:.1f} Å  R={r:.2f}  "
                          f"{'R valid' if row.get('rob_ratio_valid') else 'R not valid'}",
-                         show_replica=_replica_available())
+                         show_replica=_replica_available(), label="model")
     axs[2].legend(fontsize=7, loc="upper left")
     fig.tight_layout()
     os.makedirs(qa_dir, exist_ok=True)
@@ -104,7 +111,7 @@ def main():
     ap.add_argument("--fnu", choices=("auto", "yes", "no"), default="auto",
                     help="flux per unit frequency? auto: only for frequency abscissae or a header saying so")
     ap.add_argument("--epoch-ref", choices=("auto", "peak", "explosion"), default="auto")
-    ap.add_argument("--n-mc", type=int, default=300)
+    ap.add_argument("--n-mc", type=int, default=200, help="Monte-Carlo draws (200, as for the archive spectra)")
     ap.add_argument("--no-replica", action="store_true", help="skip the student-style (specutils) measurement")
     ap.add_argument("--qa-dir", default=None, help="write one diagnostic plot per spectrum here")
     ap.add_argument("--workers", type=int, default=os.cpu_count())

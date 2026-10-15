@@ -207,6 +207,28 @@ details.box .inner .table-wrap { border-radius: 8px; }
 .divider { display: flex; align-items: center; gap: 12px; color: var(--muted); font-family: var(--font-mono); font-size: 0.75rem; letter-spacing: 0.08em; text-transform: uppercase; }
 .divider::after { content: ""; flex: 1; height: 1px; background: var(--rule); }
 @media (prefers-reduced-motion: no-preference) { .tab, .ptab { transition: background-color .15s, color .15s, border-color .15s; } }
+/* models tab: CSM mass as an ordinal blue ramp (reference palette steps 300/400/550/700 on light,
+   550/450/350/200 on dark), no CSM in grey; the observed class behind the models in neutral grey */
+:root { --m0: #6b7682; --m1: #6da7ec; --m2: #3987e5; --m3: #1c5cab; --m4: #0d366b; }
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) { --m0: #9aa7b3; --m1: #1c5cab; --m2: #2a78d6; --m3: #5598e7; --m4: #9ec5f4; }
+}
+:root[data-theme="dark"] { --m0: #9aa7b3; --m1: #1c5cab; --m2: #2a78d6; --m3: #5598e7; --m4: #9ec5f4; }
+.mctl { display: flex; flex-direction: column; gap: 10px; }
+.seg { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.seg .glabel { font-family: var(--font-mono); font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); margin-right: 4px; min-width: 10.5em; }
+.tab[aria-pressed="true"] { background: var(--ink); color: var(--bg); border-color: var(--ink); }
+#mfig-tabs { gap: 6px 18px; }
+.viz .oband { fill: var(--viz-track); fill-opacity: 0.6; stroke: none; }
+.viz .omed { fill: none; stroke: var(--muted); stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
+.viz .odot { fill: var(--viz-dot); opacity: 0.6; }
+.viz .mtrack { fill: none; stroke: var(--mc); stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
+.viz .mtrack.nocsm { stroke-dasharray: 5 3; }
+.viz .mpt.ok { fill: var(--mc); stroke: var(--viz-surface); stroke-width: 1.5; }
+.viz .mpt.fail, .viz .mpt.neg { fill: var(--viz-surface); stroke: var(--mc); stroke-width: 1.6; }
+.viz.has-hl .mtrack:not(.is-hl), .viz.has-hl .mpt:not(.is-hl) { opacity: 0.15; }
+.viz .mtrack.is-hl { stroke-width: 3.2; }
+.viz .mpt.is-hl { stroke-width: 2.2; }
 </style>
 
 <main class="page">
@@ -247,6 +269,7 @@ details.box .inner .table-wrap { border-radius: 8px; }
 <nav class="pagetabs" role="tablist" aria-label="Report sections">
   <button class="ptab" role="tab" id="pt-validation" aria-controls="validation" aria-selected="true">Validation of the student's figures</button>
   <button class="ptab" role="tab" id="pt-results" aria-controls="results" aria-selected="false" tabindex="-1">Results: corrected measurements and trends</button>
+  <button class="ptab" role="tab" id="pt-models" aria-controls="models" aria-selected="false" tabindex="-1">Models: SuperLite against the observations</button>
 </nav>
 
 <div class="tabpanel" id="validation" role="tabpanel" aria-labelledby="pt-validation">
@@ -607,6 +630,8 @@ python -I scripts/build_page.py        --template report_page/page.template.html
 
 </div>
 
+<!--__MODELS_PANEL__-->
+
 <footer>
   <p>References: Baer 2024, Duperfit v0.1.0, doi:10.5281/zenodo.10992738 · Drake &amp; Ulrich 1980, ApJS 42, 351 · Gall et al. 2014, Nature 511, 326 · Gutiérrez et al. 2014, ApJL 786, L15 · Guillochon et al. 2017, ApJ 835, 64 (Open Supernova Catalog) · Sharma et al. 2023, ApJ 948, 52 · Silverman et al. 2013, ApJS 207, 3 · Wagle, Chatzopoulos &amp; Baer 2025, ApJ 978, 112 · Yaron &amp; Gal-Yam 2012, PASP 124, 668 (WISeREP).</p>
 </footer>
@@ -617,6 +642,10 @@ python -I scripts/build_page.py        --template report_page/page.template.html
 <script>
 (function () {
   "use strict";
+  var DATA = JSON.parse(document.getElementById("results-data").textContent);
+  if (!DATA.models || !document.getElementById("models")) {
+    ["pt-models", "models"].forEach(function (id) { var n = document.getElementById(id); if (n) n.parentNode.removeChild(n); });
+  }
 
   /* ---------------- validation tab: figure viewer ---------------- */
   var FIGS = [
@@ -674,6 +703,7 @@ python -I scripts/build_page.py        --template report_page/page.template.html
   /* ---------------- page tabs ---------------- */
   var ptabs = Array.prototype.slice.call(document.querySelectorAll(".ptab"));
   var pages = {validation: document.getElementById("validation"), results: document.getElementById("results")};
+  if (document.getElementById("models")) pages.models = document.getElementById("models");
   function showPage(id, scrollTo) {
     ptabs.forEach(function (t) {
       var on = t.getAttribute("aria-controls") === id;
@@ -682,6 +712,7 @@ python -I scripts/build_page.py        --template report_page/page.template.html
     });
     Object.keys(pages).forEach(function (k) { pages[k].hidden = (k !== id); });
     if (id === "results") renderResults();
+    if (id === "models") renderModels();
     if (scrollTo) {
       var el = document.getElementById(scrollTo);
       if (el) el.scrollIntoView({block: "start"});
@@ -691,7 +722,7 @@ python -I scripts/build_page.py        --template report_page/page.template.html
     t.addEventListener("click", function () { showPage(t.getAttribute("aria-controls")); });
     t.addEventListener("keydown", function (e) {
       if (e.key === "ArrowRight" || e.key === "ArrowLeft") {
-        var n = ptabs[(k + 1) % ptabs.length];
+        var n = ptabs[(k + (e.key === "ArrowRight" ? 1 : ptabs.length - 1)) % ptabs.length];
         n.focus(); showPage(n.getAttribute("aria-controls"));
       }
     });
@@ -704,7 +735,6 @@ python -I scripts/build_page.py        --template report_page/page.template.html
   });
 
   /* ---------------- results tab ---------------- */
-  var DATA = JSON.parse(document.getElementById("results-data").textContent);
   var CLASSES = [
     {k: "SNIIn", label: "SNe IIn", cc: "var(--c1)", inter: true, shape: "circle"},
     {k: "SLSN-II", label: "SLSN-II", cc: "var(--c2)", inter: true, shape: "circle"},
@@ -1152,9 +1182,315 @@ python -I scripts/build_page.py        --template report_page/page.template.html
     CLASSES.forEach(classTables);
   }
 
+  /* ---------------- models tab ---------------- */
+  var MD = DATA.models || null;
+  var MCLS = [
+    {k: "SNIIn", label: "SNe IIn"}, {k: "SLSN-II", label: "SLSN-II"}, {k: "SNIa-CSM", label: "SNe Ia-CSM"},
+    {k: "SNII", label: "SNe II"}, {k: "SNIIb", label: "SNe IIb"}
+  ];
+  var MVAR = [{k: "strict", label: "As for the observations"}, {k: "masked", label: "Narrow lines masked"}];
+  var MEN = [{k: "all", label: "All"}, {k: 0, label: "Lowest"}, {k: 1, label: "Middle"}, {k: 2, label: "Highest"}];
+  var MASSES = [0, 0.2, 0.5, 1, 2];
+  var MST = {cls: "SNIIn", v: "strict", en: "all"};
+  var mbus = makeBus(), mcharts = [], mrendered = false;
+
+  function mcol(M) { var i = MASSES.indexOf(M); return "var(--m" + (i < 0 ? 0 : i) + ")"; }
+  function mMass(M) { return M > 0 ? M + " M☉ CSM" : "no CSM"; }
+  function msfx() { return MST.v === "masked" ? "m" : ""; }
+  function mval(p, q) {
+    var s = msfx();
+    return {v: p[q + s], lo: p[q + "l" + s], hi: p[q + "h" + s], ok: !!p[q + "ok" + s], why: p[q + "why" + s]};
+  }
+  function energies(ser) {
+    return Array.from(new Set(MD.pts.filter(function (p) { return p.s === ser; }).map(function (p) { return p.E; })))
+      .sort(function (a, b) { return a - b; });
+  }
+  function mkey(m) { var s = m.match(/^([A-Z])(\d+)$/); return s ? [s[1], +s[2]] : [m, 0]; }
+  function msort(a, b) { var x = mkey(a), y = mkey(b); return x[0] < y[0] ? -1 : x[0] > y[0] ? 1 : x[1] - y[1]; }
+
+  function modelChart(hostEl, ser, q) {
+    var isE = q === "e";
+    var svg = d3.select(hostEl).append("svg").attr("class", "viz mviz").attr("role", "img");
+    var api = {};
+    api.draw = function () {
+      var W = Math.max(280, Math.floor(hostEl.clientWidth)), H = 340;
+      var m = {t: 12, r: 14, b: 46, l: 50};
+      svg.attr("width", W).attr("height", H).attr("viewBox", "0 0 " + W + " " + H);
+      svg.selectAll("*").remove();
+      var dom = isE ? [2, 3000] : [0.2, 60];
+      var ticks = isE ? [3, 10, 30, 100, 300, 1000, 3000] : [0.3, 1, 3, 10, 30];
+      var x = d3.scaleLinear().domain([-20, 150]).range([m.l, W - m.r]);
+      var y = d3.scaleLog().domain(dom).range([H - m.b, m.t]).clamp(true);
+      var clsLabel = MCLS.filter(function (c) { return c.k === MST.cls; })[0].label;
+      axes(svg, x, y, ticks, W, H, m, isE ? "|EW(Hα)| [Å]" : "F(Hα)/F(Hβ)", "Days from maximum (models: bolometric)");
+      if (!isE) caseB(svg, y, W, m);
+      var O = MD.obs[MST.v];
+      var bins = O.classes[MST.cls][isE ? "ew" : "r"] || [];
+      var opts = O.points.filter(function (p) { return p.c === MST.cls && p[q] != null; });
+      if (bins.length >= 2) {
+        svg.append("path").attr("class", "oband")
+          .attr("d", d3.area().x(function (b) { return x(b.mid); }).y0(function (b) { return y(b.q1); }).y1(function (b) { return y(b.q3); })(bins));
+        svg.append("path").attr("class", "omed")
+          .attr("d", d3.line().x(function (b) { return x(b.mid); }).y(function (b) { return y(b.med); })(bins));
+      }
+      svg.append("g").selectAll("circle").data(opts).join("circle").attr("class", "odot")
+        .attr("cx", function (p) { return x(p.p); }).attr("cy", function (p) { return y(p[q]); }).attr("r", 2.6);
+      var es = energies(ser);
+      var pts = MD.pts.filter(function (p) { return p.s === ser && (MST.en === "all" || p.E === es[MST.en]); });
+      var byM = d3.group(pts, function (p) { return p.m; });
+      var tg = svg.append("g"), pg = svg.append("g"), hits = [];
+      var names = Array.from(byM.keys()).sort(function (a, b) {
+        return byM.get(a)[0].M - byM.get(b)[0].M || msort(a, b);
+      });
+      names.forEach(function (name) {
+        var arr = byM.get(name).slice().sort(function (a, b) { return a.t - b.t; });
+        var col = mcol(arr[0].M), cur = [];
+        function flush() {
+          if (cur.length > 1) {
+            tg.append("path").datum({m: name}).attr("class", "mtrack" + (arr[0].M > 0 ? "" : " nocsm")).style("--mc", col)
+              .attr("d", d3.line().x(function (p) { return x(p.t); }).y(function (p) { return y(mval(p, q).v); })(cur));
+          }
+          cur = [];
+        }
+        arr.forEach(function (p) { var v = mval(p, q); if (v.ok && v.v > 0) cur.push(p); else flush(); });
+        flush();
+        arr.forEach(function (p) {
+          var v = mval(p, q);
+          if (v.v == null) return;
+          var pos = v.v > 0, cx = x(p.t), cy = pos ? y(v.v) : y(dom[0]) - 6, node;
+          if (pos) node = pg.append("circle").attr("cx", cx).attr("cy", cy).attr("r", v.ok ? 4.6 : 4);
+          else node = pg.append("path").attr("transform", "translate(" + cx + "," + cy + ") rotate(180)").attr("d", d3.symbol(d3.symbolTriangle, 42)());
+          node.datum({m: name}).attr("class", "mpt " + (pos ? (v.ok ? "ok" : "fail") : "neg")).style("--mc", col);
+          hits.push({x: cx, y: cy, p: p, v: v, model: true});
+        });
+      });
+      opts.forEach(function (p) { hits.push({x: x(p.p), y: y(p[q]), o: p, model: false}); });
+      svg.attr("aria-label", ser + " series models, " + (isE ? "Hα equivalent width" : "Balmer decrement") +
+        " versus phase, over the observed " + clsLabel + " (" + opts.length + " object-nights).");
+      var del = hits.length ? d3.Delaunay.from(hits, function (d) { return d.x; }, function (d) { return d.y; }) : null;
+      svg.append("rect").attr("class", "hit").attr("x", m.l).attr("y", m.t).attr("width", W - m.l - m.r).attr("height", H - m.t - m.b + 10)
+        .on("pointermove", function (ev) {
+          if (!del) return;
+          var pt = d3.pointer(ev), best = null, bd = 1e9;
+          hits.forEach(function (d) {
+            var dd = Math.hypot(d.x - pt[0], d.y - pt[1]) - (d.model ? 6 : 0);
+            if (dd < bd) { bd = dd; best = d; }
+          });
+          if (!best || bd > 22) { mbus.hover(null); hideTip(); return; }
+          var rows = [];
+          if (best.model) {
+            var p = best.p, v = best.v;
+            mbus.hover(p.m);
+            if (v.v > 0) {
+              rows.push({cls: "v", text: (isE ? "|EW| " + fmtV(v.v) + " Å" : "Hα/Hβ " + fmtV(v.v))});
+              if (v.lo != null && v.hi != null && v.lo > 0) rows.push({cls: "l", text: "16–84 %: " + fmtV(Math.min(v.lo, v.hi)) + "–" + fmtV(Math.max(v.lo, v.hi)) + (isE ? " Å" : "")});
+            } else {
+              rows.push({cls: "v", text: isE ? "Hα in net absorption (EW +" + fmtV(Math.abs(v.v)) + " Å)" : "negative ratio (" + v.v.toFixed(2) + ")"});
+            }
+            rows.push({key: mcol(p.M), text: p.m + " · " + mMass(p.M) + " · E = " + p.E + "×10⁵¹ erg"});
+            rows.push({cls: "l", text: (p.t >= 0 ? "+" : "") + p.t + " d from bolometric maximum"});
+            rows.push({cls: "", text: v.ok ? "passes the observational cuts" : "fails: " + (v.why || (v.v > 0 ? "not significant" : "net absorption"))});
+            if (isE && MST.v === "strict" && p.mfa != null && p.mfa > 0.05) rows.push({cls: "l", text: "narrow non-Balmer lines: " + Math.round(100 * p.mfa) + " % of the window emission"});
+          } else {
+            mbus.hover(null);
+            var o = best.o;
+            rows.push({cls: "v", text: isE ? "|EW| " + fmtV(o.e) + " Å" : "Hα/Hβ " + fmtV(o.r)});
+            rows.push({cls: "", text: snName(o.n) + " · observed " + clsLabel});
+            rows.push({cls: "l", text: fmtPh(o.p)});
+          }
+          showTip(ev, rows);
+        })
+        .on("pointerleave", function () { mbus.hover(null); hideTip(); });
+      api.highlight(mbus.current());
+    };
+    api.highlight = function (name) {
+      svg.classed("has-hl", !!name);
+      svg.selectAll(".mtrack,.mpt").classed("is-hl", function (d) { return !!name && !!d && d.m === name; });
+    };
+    mbus.sub(api.highlight);
+    return api;
+  }
+
+  function segButtons(hostId, items, key, onChange) {
+    var hostEl = document.getElementById(hostId);
+    items.forEach(function (it) {
+      var b = el("button", {type: "button", "class": "tab", "aria-pressed": String(MST[key] === it.k)}, it.label);
+      b.addEventListener("click", function () {
+        MST[key] = it.k;
+        hostEl.querySelectorAll("button").forEach(function (x) { x.setAttribute("aria-pressed", String(x === b)); });
+        onChange();
+      });
+      hostEl.appendChild(b);
+    });
+  }
+
+  function modelKey() {
+    var k = document.getElementById("mkey"), svgNS = "http://www.w3.org/2000/svg";
+    function item(draw, text) {
+      var s = el("span", {"class": "k"}), sv = document.createElementNS(svgNS, "svg");
+      sv.setAttribute("width", "22"); sv.setAttribute("height", "12"); sv.setAttribute("class", "viz mviz");
+      draw(sv); s.appendChild(sv); s.appendChild(document.createTextNode(text)); k.appendChild(s);
+    }
+    function node(tag, attrs, mc) {
+      var n = document.createElementNS(svgNS, tag);
+      Object.keys(attrs).forEach(function (a) { n.setAttribute(a, attrs[a]); });
+      if (mc) n.style.setProperty("--mc", mc);
+      return n;
+    }
+    MASSES.forEach(function (M) {
+      item(function (sv) {
+        sv.appendChild(node("line", {x1: 1, x2: 21, y1: 6, y2: 6, "class": "mtrack" + (M > 0 ? "" : " nocsm")}, mcol(M)));
+        sv.appendChild(node("circle", {cx: 11, cy: 6, r: 4, "class": "mpt ok"}, mcol(M)));
+      }, M > 0 ? M + " M☉" : "no CSM");
+    });
+    item(function (sv) { sv.appendChild(node("circle", {cx: 11, cy: 6, r: 4, "class": "mpt fail"}, "var(--m3)")); }, "fails the observational cuts");
+    item(function (sv) { sv.appendChild(node("path", {d: "M6,3 L16,3 L11,10 Z", "class": "mpt neg"}, "var(--m3)")); }, "net absorption / negative ratio");
+    item(function (sv) { sv.appendChild(node("circle", {cx: 11, cy: 6, r: 2.6, "class": "odot"})); }, "observed object-night");
+    item(function (sv) {
+      sv.appendChild(node("rect", {x: 1, y: 2, width: 20, height: 8, "class": "oband"}));
+      sv.appendChild(node("line", {x1: 1, x2: 21, y1: 6, y2: 6, "class": "omed"}));
+    }, "observed median and IQR");
+  }
+
+  function fmtE(p, s) {
+    var v = p["e" + s];
+    if (v == null) return "—";
+    if (v <= 0) return "abs.";
+    return p["eok" + s] ? fmtV(v) : "(" + fmtV(v) + ")";
+  }
+  function nearest(arr, t0, tol) {
+    var best = null;
+    arr.forEach(function (p) { if (Math.abs(p.t - t0) <= tol && (!best || Math.abs(p.t - t0) < Math.abs(best.t - t0))) best = p; });
+    return best;
+  }
+  function modelTables() {
+    var s = msfx();
+    var byM = d3.group(MD.pts, function (p) { return p.m; });
+    var names = Array.from(byM.keys()).sort(msort);
+    var hostEl = document.getElementById("mtbl-models");
+    while (hostEl.firstChild) hostEl.removeChild(hostEl.firstChild);
+    hostEl.appendChild(el("p", {"class": "muted", style: "font-size:0.88rem"},
+      "|EW| in Å, " + (s ? "narrow lines masked" : "as for the observations") + ". Plain values pass the observational cuts; values in parentheses fail them; “abs.”: Hα in net absorption. C-series values are not hydrogen lines (see above)."));
+    var rows = names.map(function (n) {
+      var a = byM.get(n).slice().sort(function (x, y) { return x.t - y.t; }), p0 = a[0];
+      var c = function (t0, tol) { var p = nearest(a, t0, tol); return p ? fmtE(p, s) + " (" + p.t + " d)" : "—"; };
+      var firstAbs = a.filter(function (p) { return p["e" + s] != null && p["e" + s] <= 0; })[0];
+      var dec = a.filter(function (p) { return p["rok" + s]; }).map(function (p) { return fmtV(p["r" + s]) + " (" + p.t + " d)"; });
+      return [n, String(p0.E), p0.M > 0 ? String(p0.M) : "—", a.map(function (p) { return p.t; }).join(", "),
+        fmtE(p0, s) + " (" + p0.t + " d)", c(10, 5), c(20, 5), c(50, 10), firstAbs ? firstAbs.t + " d" : "—", dec.length ? dec.join("; ") : "—"];
+    });
+    hostEl.appendChild(table(["model", "E [10⁵¹ erg]", "M_CSM [M☉]", "epochs [d]", "first epoch", "≈ 10 d", "≈ 20 d", "≈ 50 d",
+      "Hα net absorption from", "valid decrements"], rows, [1, 2]));
+
+    var vh = document.getElementById("mtbl-valid");
+    while (vh.firstChild) vh.removeChild(vh.firstChild);
+    var v = MST.v;
+    vh.appendChild(el("p", {"class": "muted", style: "font-size:0.88rem"}, "Spectra per model group that pass the cuts used for the observed spectra, and the most common first failing criterion (" + (s ? "narrow lines masked" : "as for the observations") + ")."));
+    var top = function (o) { var k = Object.keys(o || {}).sort(function (a, b) { return o[b] - o[a]; }); return k.length ? k[0] + " (" + o[k[0]] + ")" : "—"; };
+    var vrows = MD.validity.slice().sort(function (a, b) { return a.series < b.series ? -1 : a.series > b.series ? 1 : (a.csm - b.csm); }).map(function (g) {
+      return [g.series + (g.csm ? " with CSM" : " without CSM"), String(g.n), String(g.ew_clean_strict) + " / " + String(g.ew_clean_masked),
+        String(g.ratio_valid_strict) + " / " + String(g.ratio_valid_masked), top(g["ew_reasons_" + v]), top(g["r_reasons_" + v])];
+    });
+    vh.appendChild(table(["models", "spectra", "clean Hα EW (as measured / masked)", "valid decrement (as measured / masked)", "Hα: main failure", "decrement: main failure"], vrows, [1, 2, 3]));
+
+    var ch = document.getElementById("mtbl-cmp");
+    while (ch.firstChild) ch.removeChild(ch.firstChild);
+    ch.appendChild(el("p", {"class": "muted", style: "font-size:0.88rem"}, "A- and B-series model values that pass the cuts, compared with the observed objects of each class in the same phase bin: median offset from the class median (dex), and the share inside the interquartile range and inside the full range of the objects (" + (s ? "narrow lines masked" : "as for the observations") + ")."));
+    var crows = (MD.cmp[v] || []).filter(function (r) { return ["SNIIn", "SLSN-II", "SNII"].indexOf(r.cls) >= 0; }).map(function (r) {
+      return [MCLS.filter(function (c) { return c.k === r.cls; })[0].label, r.q === "ew" ? "|EW|" : "Hα/Hβ", r.M > 0 ? r.M + " M☉" : "none",
+        String(r.n), String(r.n_models), (r.med_dex >= 0 ? "+" : "−") + Math.abs(r.med_dex).toFixed(2), Math.round(100 * r.frac_iqr) + " %", Math.round(100 * r.frac_range) + " %"];
+    });
+    ch.appendChild(table(["class", "quantity", "CSM", "model epochs", "models", "offset [dex]", "inside IQR", "inside range"], crows, [3, 4, 5, 6, 7]));
+
+    var ph = document.getElementById("mtbl-pub");
+    while (ph.firstChild) ph.removeChild(ph.firstChild);
+    var P = MD.pub;
+    ph.appendChild(el("p", {"class": "muted", style: "font-size:0.88rem"}, P.n_pairs + " model epochs of " + P.n_models + " models appear both in the paper's Tables A1–A2 (NLTE rows) and in this set. The paper's recipe (specutils generic continuum over 4000–7000 Å, integration ±window) is re-run on these spectra for several windows."));
+    var prow = (P.replica || []).map(function (r) {
+      return ["recipe, ±" + r.hw + " Å", String(r.n), r.med_absdex_ew.toFixed(3), Math.round(100 * r.frac_within_0p05) + " %", r.med_absdex_r != null ? r.med_absdex_r.toFixed(2) : "—"];
+    });
+    ph.appendChild(table(["measurement on these spectra", "EW pairs", "median |Δ| EW [dex]", "within 0.05 dex", "median |Δ| Hα/Hβ [dex]"], prow, [1, 2, 3, 4]));
+
+    var ah = document.getElementById("mtbl-all");
+    while (ah.firstChild) ah.removeChild(ah.firstChild);
+    var all = MD.pts.slice().sort(function (a, b) { return msort(a.m, b.m) || a.t - b.t; }).map(function (p) {
+      return [p.m, String(p.t), fmtE(p, ""), p.eok ? "" : (p.ewhy || ""), fmtE(p, "m"),
+        p.r != null ? (p.rok ? fmtV(p.r) : "(" + (p.r > 0 ? fmtV(p.r) : p.r.toFixed(2)) + ")") : "—", p.rok ? "" : (p.rwhy || ""),
+        p.rm != null ? (p.rokm ? fmtV(p.rm) : "(" + (p.rm > 0 ? fmtV(p.rm) : p.rm.toFixed(2)) + ")") : "—",
+        p.mfa != null ? Math.round(100 * p.mfa) + " %" : "—"];
+    });
+    ah.appendChild(el("p", {"class": "muted", style: "font-size:0.88rem"}, "All " + MD.n_spectra + " spectra. Parentheses: fails the observational cuts (first failing criterion given for the measurement as for the observations)."));
+    ah.appendChild(table(["model", "day", "|EW| [Å]", "EW: why not", "|EW| masked", "Hα/Hβ", "ratio: why not", "Hα/Hβ masked", "metal share of Hα window"], all, [1, 2, 4, 5, 7, 8]));
+  }
+
+  function modelFigures() {
+    var tabsEl = document.getElementById("mfig-tabs"), img = document.getElementById("mfig-img"), cap = document.getElementById("mfig-cap");
+    var cur = {cls: "SNIIn", q: "EW", v: "masked"};
+    function show() {
+      img.src = "fig/models/" + cur.v + "/" + cur.q + "_" + cur.cls + ".png";
+      var lab = MCLS.filter(function (c) { return c.k === cur.cls; })[0].label;
+      img.alt = (cur.q === "EW" ? "Hα equivalent width" : "Balmer decrement") + " of the A- and B-series models over the observed " + lab + (cur.v === "masked" ? ", narrow lines masked" : "");
+      cap.textContent = img.alt + ".";
+      tabsEl.querySelectorAll("button").forEach(function (b) {
+        b.setAttribute("aria-pressed", String(b.getAttribute("data-k") === cur[b.getAttribute("data-g")]));
+      });
+    }
+    [["v", [["masked", "masked"], ["strict", "as measured"]]], ["q", [["EW", "Hα EW"], ["R", "Hα/Hβ"]]],
+      ["cls", MCLS.map(function (c) { return [c.k, c.label]; })]].forEach(function (g) {
+      var grp = el("div", {"class": "tabgroup"});
+      g[1].forEach(function (it) {
+        var b = el("button", {type: "button", "class": "tab", "data-g": g[0], "data-k": it[0], "aria-pressed": "false"}, it[1]);
+        b.addEventListener("click", function () { cur[g[0]] = it[0]; show(); });
+        grp.appendChild(b);
+      });
+      tabsEl.appendChild(grp);
+    });
+    show();
+  }
+
+  function renderModels() {
+    if (mrendered || !MD) return;
+    mrendered = true;
+    segButtons("mctl-cls", MCLS, "cls", function () { mcharts.forEach(function (c) { c.api.draw(); }); });
+    segButtons("mctl-var", MVAR, "v", function () { mcharts.forEach(function (c) { c.api.draw(); }); modelTables(); });
+    segButtons("mctl-en", MEN, "en", function () { mcharts.forEach(function (c) { c.api.draw(); }); });
+    var sel = document.getElementById("mhl");
+    sel.appendChild(el("option", {value: ""}, "All models"));
+    Array.from(new Set(MD.pts.filter(function (p) { return p.s !== "C"; }).map(function (p) { return p.m; }))).sort(msort).forEach(function (n) {
+      var p = MD.pts.filter(function (x) { return x.m === n; })[0];
+      sel.appendChild(el("option", {value: n}, n + " · " + mMass(p.M) + " · E = " + p.E));
+    });
+    sel.addEventListener("change", function () { mbus.select(sel.value); });
+    modelKey();
+    if (!window.d3) {
+      document.querySelectorAll("#models .chart").forEach(function (c) {
+        c.appendChild(el("p", {"class": "fallback"}, "The chart library could not load. The values are in the tables below."));
+      });
+    } else {
+      ["A", "B"].forEach(function (ser) {
+        ["e", "r"].forEach(function (q) {
+          var h = document.getElementById("mc-" + ser + "-" + q);
+          mcharts.push({host: h, api: modelChart(h, ser, q)});
+        });
+      });
+      mcharts.forEach(function (c) { c.api.draw(); });
+      if (window.ResizeObserver) {
+        var pending = null;
+        var ro = new ResizeObserver(function () {
+          if (pending) cancelAnimationFrame(pending);
+          pending = requestAnimationFrame(function () { mcharts.forEach(function (c) { if (c.host.clientWidth) c.api.draw(); }); });
+        });
+        mcharts.forEach(function (c) { ro.observe(c.host); });
+      }
+    }
+    modelTables();
+    modelFigures();
+  }
+
   function route() {
     var h = (location.hash || "").replace("#", "");
     if (h === "results" || h.indexOf("res-") === 0) showPage("results", h === "results" ? null : h);
+    else if (pages.models && (h === "models" || h.indexOf("mod-") === 0)) showPage("models", h === "models" ? null : h);
     else if (FIGS.some(function (f) { return f.id === h; })) { showPage("validation"); selectFig(h); }
     else showPage("validation");
   }

@@ -18,7 +18,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import numpy as np  # noqa: E402
 import pandas as pd  # noqa: E402
 
-from bv.measure import robust_measure  # noqa: E402
+from bv.measure import mask_narrow_lines, robust_measure  # noqa: E402
 from bv.templates import FIGURE_CLASSES, list_templates, student_label  # noqa: E402
 from scripts_common import rest_frame  # noqa: E402
 
@@ -52,6 +52,11 @@ def _one(job):
     rb = robust_measure(w, f, None, n_mc=200)
     for k, v in rb.items():
         row[f"rob_{k}"] = v
+    # same measurement with the narrow non-Balmer lines masked (comparison with the models)
+    rm = robust_measure(w, mask_narrow_lines(w, f), None, n_mc=200)
+    for k, v in rm.items():
+        if not k.startswith("pc_"):
+            row[f"robm_{k}"] = v
     if meta.get("ebv") is not None and np.isfinite(row.get("rob_R_net", np.nan)):
         row["rob_R_net_mwcorr"] = row["rob_R_net"] * 10 ** (-0.4 * DA_HB_HA_PER_EBV * meta["ebv"])
     return row

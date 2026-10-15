@@ -1,3 +1,8 @@
 data/
 __pycache__/
 *.pyc
+# SuperLite model spectra and everything derived from them (unpublished; kept out of this public repo)
+results/model_measurements.csv
+results/model_results*.json
+results/model_results*.csv
+figures/models/

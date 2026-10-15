@@ -66,11 +66,11 @@ def student_style_figure(df, value_col, cls_label, quantity, out, err_cols=None,
     plt.close(fig)
 
 
-def continuum_diagnostic(ax, w, f, lam0, title, show_replica=True):
+def continuum_diagnostic(ax, w, f, lam0, title, show_replica=True, label="template"):
     """Plot a spectrum around one line with the three continuum definitions."""
     lo, hi = v2w(-26000, lam0), v2w(22000, lam0)
     m = (w >= lo) & (w <= hi)
-    ax.plot(w[m], f[m], c="k", lw=0.8, label="template")
+    ax.plot(w[m], f[m], c="k", lw=0.8, label=label)
     # fixed sidebands (this work, method C1)
     b = (v2w(-NOMINAL["v_out"], lam0), v2w(-NOMINAL["v_in"], lam0))
     r = (v2w(NOMINAL["v_in"], lam0), v2w(NOMINAL["v_out"], lam0))

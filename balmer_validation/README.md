@@ -86,28 +86,51 @@ under `fig/` next to it, as published).
 
 ## SuperLite models (A/B/C series) vs the observed classes
 
+Model spectra and everything derived from them stay out of this (public) repository: the paths below
+are git-ignored.  The report page gets a third tab ("Models") only when it is built with `--models`.
+
 ```bash
-python -I scripts/measure_models.py --models ~/Downloads/NLTE \
+# on the computer that holds the spectra, if they cannot be copied as they are:
+python3 scripts/pack_model_spectra.py ~/Downloads/NLTE        # -> NLTE_optical.xlsx (3000-10000 Å, raw values)
+python3 -I scripts/pack_model_spectra.py --unpack NLTE_optical.xlsx --outdir data/models/NLTE
+
+python -I scripts/measure_models.py --models data/models/NLTE \
        --catalogue MESA_STELLA_CSM_INTERACTION_MODELS.xlsx \
        --out results/model_measurements.csv --qa-dir figures/models/qa
-python -I scripts/make_model_figures.py --mmeas results/model_measurements.csv \
-       --obs results/observed_results_points.csv --outdir figures/models
+python -I scripts/results_data.py --ameas results/archive_measurements_phased.csv \
+       --out results/observed_results_masked.json --prefix robm_
+python -I scripts/model_results.py --mmeas results/model_measurements.csv \
+       --obs results/observed_results.json --obs-masked results/observed_results_masked.json \
+       --published results/published_model_lines.csv --out results/model_results.json
+python -I scripts/make_model_figures.py --mmeas results/model_measurements.csv --variant strict \
+       --obs results/observed_results_points.csv --outdir figures/models/strict
+python -I scripts/make_model_figures.py --mmeas results/model_measurements.csv --variant masked \
+       --obs results/observed_results_masked_points.csv --outdir figures/models/masked
+python -I scripts/page_data.py --results results --out <private dir>/page_data_models.json \
+       --models results/model_results.json
+python -I scripts/build_page.py --template report_page/page.template.html \
+       --data <private dir>/page_data_models.json --out <private dir>/balmer_audit.html
 ```
 
-* Input: one directory per model (`A4/`, `B12/`, …), one text file per epoch with wavelength and
-  flux columns.  The model is read from the directory name, the epoch from the file name
-  (`t20`, `day_20`, `20d`, or the only number in the name).  The wavelength unit is inferred from the
-  values (Å, nm, µm, cm, m, or frequency in Hz).  Flux is taken as F_λ unless the abscissa is a frequency
-  or a header line says "per Hz"; `--fnu yes|no` forces it, `--flux-col` picks another column.
-  Line ratios depend on this choice (F_ν integrated over λ would bias Hα/Hβ by (6563/4861)² ≈ 1.8).
+* Input: one directory per model (`A4/`, `B12/`, …, at any depth), one text file per epoch with wavelength
+  and flux columns.  The model is read from the directory name, the epoch from the file name (`20d`, `t20`,
+  `day_20`, or the only number in the name).  The wavelength unit is inferred from the values (Å, nm, µm,
+  cm, m, or frequency in Hz).  Flux is taken as F_λ unless the abscissa is a frequency or a header line says
+  "per Hz"; `--fnu yes|no` forces it, `--flux-col` picks another column.  Line ratios depend on this choice
+  (F_ν integrated over λ would bias Hα/Hβ by (6563/4861)² ≈ 1.8); the IR continuum slope is a quick check
+  (F_λ of a 5000–10,000 K photosphere falls as λ^−3.1…−3.6 at 1.5–3 µm).
 * Epochs are checked against the spreadsheet's epoch lists (days since the bolometric maximum); when they
   only match after subtracting `day_Lbol_max`, the files count from explosion (`--epoch-ref` forces either).
-* Measurements: the same robust method as for the observed spectra (the per-pixel noise of the Monte-Carlo
-  spectra is estimated from their own pixel-to-pixel scatter), and, if specutils is installed, the paper's
-  specutils recipe for comparison with its Tables A1–A2.  `--qa-dir` writes one continuum diagnostic per spectrum.
-* Figures: per observed class, model tracks (rows: A/B series; columns: explosion energy; colour: CSM mass)
-  over that class's observed objects.  The C series has no hydrogen and is only listed in the table.
+* Measurements, identical to those of the observed spectra (200 Monte-Carlo draws; the per-pixel noise of
+  the Monte-Carlo spectra is estimated from their own pixel-to-pixel scatter): `rob_*` as measured,
+  `robm_*` with the narrow non-Balmer lines masked (`bv.measure.NARROW_CONTAMINANTS`, ±1000 km/s; the
+  archive measurement carries the same `robm_*` columns), `robn_*` with the narrow windows, and `rep_*`
+  the paper's specutils recipe (if specutils is installed) for comparison with its Tables A1–A2.
+* `model_results.py`: per model spectrum both variants with the first failing quality criterion; each
+  passing value placed against the observed objects of each class in the same phase bin; validity counts
+  per model group; the share of the window emission carried by the masked lines; the check against the
+  paper's tables.
 * `scripts/published_model_lines.py` extracts Tables A1–A2 of Wagle, Chatzopoulos & Baer (2025) into
-  `results/published_model_lines.csv` (rows whose printed ratio disagrees with the printed fluxes are flagged);
-  `make_model_figures.py --published results/published_model_lines.csv --catalogue <xlsx>` draws them
-  (`figures/models_published/`, NLTE rows; preliminary, not re-measured).
+  `results/published_model_lines.csv` (rows whose printed ratio disagrees with the printed fluxes are
+  flagged); `make_model_figures.py --published results/published_model_lines.csv --catalogue <xlsx>` draws
+  them (`figures/models_published/`, NLTE rows; not re-measured).

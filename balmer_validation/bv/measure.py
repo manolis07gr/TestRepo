@@ -143,6 +143,47 @@ WINDOWS = {
 }
 
 
+# Narrow non-Balmer emission lines that fall inside the Hα/Hβ integration windows or their
+# sidebands: the recurring narrow peaks of the SuperLite interaction models (Si II 6347/6371 and
+# He I 6678 beside Hα; He II 4686, He I/Fe II 4922/4924 and 5016/5018, Si II 5041/5056 and
+# Fe II 5169 around Hβ).  He II 6560/4859 coincide with Hα/Hβ and cannot be separated.
+NARROW_CONTAMINANTS = {
+    "Si II 6347": 6347.11, "Si II 6371": 6371.37, "He I 6678": 6678.15,
+    "He II 4686": 4685.71, "He I 4922 / Fe II 4924": 4922.9, "He I 5016 / Fe II 5018": 5017.1,
+    "Si II 5041": 5041.03, "Si II 5056": 5055.98, "Fe II 5169": 5169.03,
+}
+
+
+def mask_narrow_lines(w, f, lines=None, hw_kms=1000.0, anchor_kms=600.0):
+    """Replace ±hw_kms around each listed line by a straight line between the median flux just
+    outside the mask (anchor_kms wide on each side).  Masks closer than two anchor widths are
+    merged (e.g. the Si II 6347/6371 doublet), so an anchor never sits on another masked line.
+    Removes narrow emission/absorption at those wavelengths and leaves broad profiles
+    essentially unchanged."""
+    lines = NARROW_CONTAMINANTS if lines is None else lines
+    w = np.asarray(w, float)
+    out = np.array(f, float, copy=True)
+    iv = sorted((v2w(-hw_kms, lam), v2w(hw_kms, lam)) for lam in lines.values())
+    merged = []
+    for lo, hi in iv:
+        if merged and lo <= merged[-1][1] * (1.0 + 2.0 * anchor_kms / C_KMS):
+            merged[-1][1] = max(merged[-1][1], hi)
+        else:
+            merged.append([lo, hi])
+    for lo, hi in merged:
+        m = (w >= lo) & (w <= hi)
+        if not m.any():
+            continue
+        left = (w >= lo * (1.0 - anchor_kms / C_KMS)) & (w < lo)
+        right = (w > hi) & (w <= hi * (1.0 + anchor_kms / C_KMS))
+        if not left.any() or not right.any():
+            continue
+        xl, yl = np.mean(w[left]), np.median(out[left])
+        xr, yr = np.mean(w[right]), np.median(out[right])
+        out[m] = yl + (yr - yl) * (w[m] - xl) / (xr - xl)
+    return out
+
+
 def _noise(w, f, ef):
     """Per-pixel 1σ noise: the supplied error spectrum if usable, else a robust
     estimate from the residuals around a running median."""

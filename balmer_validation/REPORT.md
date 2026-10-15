@@ -239,6 +239,14 @@ Caveats: small, heterogeneous samples with uneven phase coverage; host extinctio
 full-line integrals over ±10,000 km/s (narrow and intermediate components not separated); phases from
 discovery are offset from maximum by an unknown amount.
 
+**Robustness to narrow non-Balmer lines.** Repeating every measurement with narrow Si II 6347/6371,
+He I 6678, He II 4686, He I/Fe II 4922/4924 and 5016/5018, Si II 5041/5056 and Fe II 5169 masked over
+±1000 km/s (`robm_*` columns; `results/observed_results_masked.json`) moves the SN IIn EW medians by at
+most 10 % (78 → 81, 103 → 105, 127 → 130, 169 → 186, 273 → 276, 613 → 616 Å per phase bin). It makes
+more SN IIn Hβ measurements usable (68 instead of 52 object-nights), with a median decrement of 4.6
+instead of 4.4. The masked variant exists for the comparison with model spectra, in which these lines
+are strong.
+
 ## 6. Recommendations
 
 1. Drop or repair the defective templates (Section 3.4); de-duplicate before counting epochs.

@@ -11,7 +11,7 @@ objects (bootstrap).
 
 Usage:
     python -I scripts/results_data.py --ameas results/archive_measurements_phased.csv \
-        --out results/observed_results.json
+        --out results/observed_results.json [--prefix robm_]
 """
 import argparse
 import json
@@ -27,6 +27,7 @@ SLSN_IIN = {"2006gy", "PTF10fel", "PTF10jwd", "PTF10qaf", "PTF10scc", "PTF10tpz"
 BINS = [-20, 0, 20, 40, 70, 100, 150]
 CASE_B = 2.86
 RNG = np.random.default_rng(42)
+P = "rob_"          # measurement columns: rob_ (as measured) or robm_ (narrow non-Balmer lines masked)
 
 
 def nightly(a):
@@ -35,8 +36,8 @@ def nightly(a):
     a["night"] = np.round(a.mjd).astype(int)
     rows = []
     for (name, night), g in a.groupby(["name", "night"]):
-        e = g[g.rob_ew_clean.astype(bool)]
-        r = g[g.rob_ratio_valid.astype(bool)]
+        e = g[g[P + "ew_clean"].astype(bool)]
+        r = g[g[P + "ratio_valid"].astype(bool)]
         if e.empty and r.empty:
             continue
         row = dict(name=name, figure=g.figure.iloc[0], phase=float(g.phase.median()),
@@ -44,13 +45,13 @@ def nightly(a):
                    reference=str(g.reference.dropna().iloc[0]) if g.reference.notna().any() else "",
                    n_spec=len(g))
         if not e.empty:
-            row.update(ew=float(-e.rob_EW_net_Ha.median()), ew_lo=float(-e.rob_EW_net_Ha_hi.median()),
-                       ew_hi=float(-e.rob_EW_net_Ha_lo.median()))
+            row.update(ew=float(-e[P + "EW_net_Ha"].median()), ew_lo=float(-e[P + "EW_net_Ha_hi"].median()),
+                       ew_hi=float(-e[P + "EW_net_Ha_lo"].median()))
         if not r.empty:
-            row.update(r=float(r.rob_R_net.median()), r_lo=float(r.rob_R_net_lo.median()),
-                       r_hi=float(r.rob_R_net_hi.median()))
-            if "rob_R_net_mwcorr" in r and r.rob_R_net_mwcorr.notna().any():
-                row["r_mw"] = float(r.rob_R_net_mwcorr.median())
+            row.update(r=float(r[P + "R_net"].median()), r_lo=float(r[P + "R_net_lo"].median()),
+                       r_hi=float(r[P + "R_net_hi"].median()))
+            if P + "R_net_mwcorr" in r and r[P + "R_net_mwcorr"].notna().any():
+                row["r_mw"] = float(r[P + "R_net_mwcorr"].median())
         rows.append(row)
     return pd.DataFrame(rows)
 
@@ -152,8 +153,8 @@ def ia_csm_limits(am):
     spectrum makes the Hβ continuum model-dependent, so these are limits for this
     continuum definition only.
     """
-    ia = am[(am.figure == "SNIa-CSM") & am.rob_ew_clean.astype(bool) & am.rob_cov_Hb.astype(bool)].copy()
-    ia["r_ll"] = ia.rob_F_net_Ha_lo / ia.rob_F_em_Hb_hi
+    ia = am[(am.figure == "SNIa-CSM") & am[P + "ew_clean"].astype(bool) & am[P + "cov_Hb"].astype(bool)].copy()
+    ia["r_ll"] = ia[P + "F_net_Ha_lo"] / ia[P + "F_em_Hb_hi"]
     ia["night"] = np.round(ia.mjd).astype(int)
     g = ia.groupby(["name", "night"]).agg(phase=("phase", "median"), r_ll=("r_ll", "median")).reset_index()
     g = g[np.isfinite(g.r_ll) & (g.r_ll > 0)]
@@ -188,7 +189,11 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--ameas", required=True)
     ap.add_argument("--out", required=True)
+    ap.add_argument("--prefix", default="rob_", choices=("rob_", "robm_"),
+                    help="rob_: as measured (default); robm_: narrow non-Balmer lines masked")
     a = ap.parse_args()
+    global P
+    P = a.prefix
     am = pd.read_csv(a.ameas)
     am = am[am.usable.astype(bool) & (am.phase >= -20) & (am.phase <= 150)]
     d = nightly(am)
