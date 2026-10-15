@@ -22,12 +22,14 @@ bv/                      analysis package
   archive.py             OSC JSON / WISeREP parsing
   match.py               template <-> archive spectrum identification (feature correlation)
   plotting.py            student-style and corrected figures, continuum diagnostics
+  models.py              SuperLite model spectra: spreadsheet catalogue, file discovery, unit-safe loading
 scripts/                 command-line steps (see below)
 results/                 CSV outputs (one row per template / archive spectrum / digitized point)
 figures/student/         the ten figures under review (as received)
 figures/corrected/       the same ten figures re-measured on the same templates
 figures/archive/         the ten figures reproduced from public spectra + template-vs-archive checks
 figures/*.png            validation and diagnostic figures used in the report
+figures/models_published/  SuperLite models (published line values) vs the observed classes (preliminary)
 report_page/             report page template and built page (Validation and Results tabs)
 data/                    downloaded public spectra (git-ignored; re-created by fetch_archive.py)
 ```
@@ -81,3 +83,31 @@ under `fig/` next to it, as published).
 * `pc_*` columns: standard SN pseudo-continuum decomposition of the P-Cygni profile into emission and
   absorption parts (first flux maximum blueward of the absorption trough → red continuum), and
   a/e = EW_abs/|EW_em| (Gutiérrez et al. 2014).
+
+## SuperLite models (A/B/C series) vs the observed classes
+
+```bash
+python -I scripts/measure_models.py --models ~/Downloads/NLTE \
+       --catalogue MESA_STELLA_CSM_INTERACTION_MODELS.xlsx \
+       --out results/model_measurements.csv --qa-dir figures/models/qa
+python -I scripts/make_model_figures.py --mmeas results/model_measurements.csv \
+       --obs results/observed_results_points.csv --outdir figures/models
+```
+
+* Input: one directory per model (`A4/`, `B12/`, …), one text file per epoch with wavelength and
+  flux columns.  The model is read from the directory name, the epoch from the file name
+  (`t20`, `day_20`, `20d`, or the only number in the name).  The wavelength unit is inferred from the
+  values (Å, nm, µm, cm, m, or frequency in Hz).  Flux is taken as F_λ unless the abscissa is a frequency
+  or a header line says "per Hz"; `--fnu yes|no` forces it, `--flux-col` picks another column.
+  Line ratios depend on this choice (F_ν integrated over λ would bias Hα/Hβ by (6563/4861)² ≈ 1.8).
+* Epochs are checked against the spreadsheet's epoch lists (days since the bolometric maximum); when they
+  only match after subtracting `day_Lbol_max`, the files count from explosion (`--epoch-ref` forces either).
+* Measurements: the same robust method as for the observed spectra (the per-pixel noise of the Monte-Carlo
+  spectra is estimated from their own pixel-to-pixel scatter), and, if specutils is installed, the paper's
+  specutils recipe for comparison with its Tables A1–A2.  `--qa-dir` writes one continuum diagnostic per spectrum.
+* Figures: per observed class, model tracks (rows: A/B series; columns: explosion energy; colour: CSM mass)
+  over that class's observed objects.  The C series has no hydrogen and is only listed in the table.
+* `scripts/published_model_lines.py` extracts Tables A1–A2 of Wagle, Chatzopoulos & Baer (2025) into
+  `results/published_model_lines.csv` (rows whose printed ratio disagrees with the printed fluxes are flagged);
+  `make_model_figures.py --published results/published_model_lines.csv --catalogue <xlsx>` draws them
+  (`figures/models_published/`, NLTE rows; preliminary, not re-measured).
